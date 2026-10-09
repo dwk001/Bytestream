@@ -1,0 +1,124 @@
+name: go-librespot
+
+# Builds the go-librespot daemon (https://github.com/devgianlu/go-librespot, GPL-3.0) for Windows. ByteStream starts it
+# as a separate helper program to play Spotify audio without a browser.  The result is cached per version, so only
+# the first run (or a version bump) pays for the compile.  Other workflows call this one and download the artifact.
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/go-librespot.yml"]
+
+env:
+  GO_LIBRESPOT_REF: v0.10.3
+  CACHE_REV: r1
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: dist
+          key: go-librespot-windows-${{ env.GO_LIBRESPOT_REF }}-${{ env.CACHE_REV }}
+
+      - uses: actions/checkout@v4
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          repository: devgianlu/go-librespot
+          ref: ${{ env.GO_LIBRESPOT_REF }}
+          path: upstream
+
+      - uses: actions/setup-go@v5
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - uses: msys2/setup-msys2@v2
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          msystem: MINGW64
+          update: false
+          path-type: inherit
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-libogg
+            mingw-w64-x86_64-libvorbis
+            mingw-w64-x86_64-flac
+            mingw-w64-x86_64-mpg123
+
+      - name: Point cgo at MSYS2 (as upstream's own CI does)
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          echo "CC=$(cygpath -m /mingw64/bin/gcc.exe)" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG=$(cygpath -m /mingw64/bin/pkg-config.exe)" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$(cygpath -m /mingw64/lib/pkgconfig)" >> "$GITHUB_ENV"
+          # the libogg import library lacks ogg_stream_iovecin, which the vorbis binding needs: link the static one
+          if [ -f /mingw64/lib/libogg.dll.a ]; then mv /mingw64/lib/libogg.dll.a /mingw64/lib/libogg.dll.a.unused; fi
+
+      - name: Build the daemon
+        if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: upstream
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          export PATH="/mingw64/bin:$PATH"
+          go build -v -o go-librespot.exe ./cmd/daemon
+          ls -l go-librespot.exe
+
+      - name: Collect the exe, any MinGW DLLs it needs, and the licence
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p dist
+          cp upstream/go-librespot.exe dist/
+          cp upstream/LICENSE dist/go-librespot-LICENSE.txt
+          echo "dynamic dependencies:"
+          ldd dist/go-librespot.exe | tee deps.txt
+          for dll in $(grep -io '/mingw64/bin/[^ ]*\.dll' deps.txt | sort -u); do
+            echo "bundling $dll"
+            cp "$dll" dist/
+          done
+          echo "$GO_LIBRESPOT_REF" > dist/go-librespot-VERSION.txt
+          ls -l dist
+
+      - name: What does the daemon accept? (flags, and its API with no account signed in)
+        run: |
+          export PATH="/mingw64/bin:$PATH"
+          cd dist
+          echo "=== --help ==="
+          ./go-librespot.exe --help 2>&1 | head -60 || true
+          echo "=== run for 12 s with the local API on and device-code login ==="
+          mkdir -p ../cfg
+          cat > ../cfg/config.yml <<'EOF'
+          device_name: "ByteStream"
+          audio_backend: wasapi
+          log_level: debug
+          credentials:
+            type: device_auth
+          server:
+            enabled: true
+            address: 127.0.0.1
+            port: 36999
+          EOF
+          ./go-librespot.exe --config_dir ../cfg > ../daemon.log 2>&1 &
+          pid=$!
+          sleep 12
+          for p in "" status auth/code player/volume; do
+            echo "--- GET /$p"; curl -s -i -m 5 "http://127.0.0.1:36999/$p" | head -20; echo
+          done
+          kill $pid 2>/dev/null || true
+          echo "=== daemon log ==="; head -80 ../daemon.log
+          echo "=== files it wrote ==="; ls -la ../cfg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go-librespot-windows
+          path: dist
+          if-no-files-found: error
