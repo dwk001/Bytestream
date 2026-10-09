@@ -577,3 +577,112 @@ PROC ui_toast, 1
         add     rax, 3500
         mov     [toast_until], rax
         EPROC
+
+; ---------------------------------------------------------------- error banner
+; rcx = message (UTF-16), rdx = action label (UTF-16) or 0, r8d = action code (BA_*)
+PROC ui_banner, 3
+        mov     loc(0), rcx
+        mov     loc(1), rdx
+        mov     loc(2), r8
+        mov     rcx, [banner_text]
+        call    mem_free
+        mov     rcx, [banner_label]
+        call    mem_free
+        mov     rcx, loc(0)
+        call    w_dup
+        mov     [banner_text], rax
+        xor     eax, eax
+        mov     rcx, loc(1)
+        test    rcx, rcx
+        jz      .nl
+        call    w_dup
+.nl:    mov     [banner_label], rax
+        mov     eax, dword loc(2)
+        mov     [banner_code], eax
+        EPROC
+
+PROC ui_banner_clear, 0
+        mov     rcx, [banner_text]
+        call    mem_free
+        mov     rcx, [banner_label]
+        call    mem_free
+        mov     qword [banner_text], 0
+        mov     qword [banner_label], 0
+        mov     dword [banner_h], 0
+        EPROC
+
+; Full-width strip at the top of the main area.  Pages reserve [banner_h] pixels for it (see page_begin).
+PROC paint_banner, 8
+        cmp     qword [banner_text], 0
+        je      .out
+        S       48
+        mov     [banner_h], eax
+        mov     loc(0), rax                     ; height
+        mov     eax, [lay_main_x]
+        mov     loc(1), rax
+        mov     eax, [lay_main_w]
+        mov     loc(2), rax
+        S       16
+        mov     loc(3), rax                     ; padding
+        SETCOL  T_DANGER
+        RECT    dword loc(1), 0, dword loc(2), dword loc(0)
+        HIT     dword loc(1), 0, dword loc(2), dword loc(0), H_SHELL, 0
+        S       32
+        mov     ebx, eax                        ; close button box
+        mov     esi, dword loc(1)
+        add     esi, dword loc(2)
+        sub     esi, ebx
+        sub     esi, dword loc(3)               ; close button x
+        mov     edi, dword loc(0)
+        sub     edi, ebx
+        shr     edi, 1                          ; close button y
+        mov     ecx, 0xFFFFFFFF
+        call    gfx_color
+        S       14
+        mov     r12d, eax
+        IBTN    ic_close, esi, edi, ebx, H_BANNER_X, 0, r12d, 0, 0
+        mov     dword loc(5), esi               ; right edge of the message area
+        cmp     qword [banner_label], 0
+        je      .msg
+        SETFONT F_BODY_B
+        mov     rcx, [banner_label]
+        call    gfx_text_w
+        mov     r12d, eax
+        S       32
+        add     r12d, eax                       ; button width = label + 2 * 16
+        S       32
+        mov     r13d, eax                       ; button height
+        S       8
+        mov     r14d, esi
+        sub     r14d, r12d
+        sub     r14d, eax                       ; button x
+        mov     r15d, dword loc(0)
+        sub     r15d, r13d
+        shr     r15d, 1                         ; button y
+        mov     rcx, [banner_label]
+        mov     edx, r14d
+        mov     r8d, r15d
+        mov     r9d, r12d
+        mov     outarg(5), r13
+        mov     qword outarg(6), H_BANNER_ACT
+        mov     eax, [banner_code]
+        mov     outarg(7), rax
+        mov     qword outarg(8), 1
+        call    draw_button
+        S       12
+        mov     ecx, r14d
+        sub     ecx, eax
+        mov     dword loc(5), ecx
+.msg:   mov     ecx, 0xFFFFFFFF
+        call    gfx_color
+        SETFONT F_BODY
+        mov     edx, dword loc(1)
+        add     edx, dword loc(3)
+        mov     r9d, dword loc(5)
+        sub     r9d, edx
+        mov     rcx, [banner_text]
+        xor     r8d, r8d
+        mov     rax, loc(0)
+        mov     outarg(5), rax
+        call    gfx_text
+.out:   EPROC

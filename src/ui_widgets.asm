@@ -93,6 +93,11 @@ PROC ui_unclip, 0
 
 ; ---------------------------------------------------------------- layout for the frame
 PROC lay_compute, 0
+        xor     eax, eax
+        cmp     qword [banner_text], 0
+        je      .nob
+        S       48
+.nob:   mov     [banner_h], eax
         MET     eax, M_SB
         mov     [lay_sb_w], eax
         MET     eax, M_BAR

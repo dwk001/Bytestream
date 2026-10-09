@@ -326,6 +326,14 @@ PROC ui_activate, 6
         je      .signin
         cmp     ecx, H_SIGNOUT
         je      .signout
+        cmp     ecx, H_COPY_URI
+        je      .copyuri
+        cmp     ecx, H_OPEN_DASH
+        je      .dash
+        cmp     ecx, H_BANNER_X
+        je      .bclose
+        cmp     ecx, H_BANNER_ACT
+        je      .bact
         xor     eax, eax
         jmp     .out
 .nav:   mov     eax, edx
@@ -443,6 +451,29 @@ PROC ui_activate, 6
         jmp     .done
 .signin:
         call    real_sign_in
+        jmp     .done
+.copyuri:
+        call    app_copy_redirect
+        jmp     .done
+.dash:  lea     rcx, [s_dashboard_url]
+        call    os_open_url
+        jmp     .done
+.bclose:
+        call    ui_banner_clear
+        jmp     .done
+.bact:  mov     eax, dword loc(1)
+        call    ui_banner_clear
+        cmp     dword loc(1), BA_DASHBOARD
+        jne     .bset
+        lea     rcx, [s_dashboard_url]
+        call    os_open_url
+        jmp     .done
+.bset:  cmp     dword loc(1), BA_SETTINGS
+        jne     .done
+        cmp     dword [signed_in], 0
+        je      .done                           ; signed out: the setup fields are already on screen
+        mov     dword [page], PAGE_SETTINGS
+        mov     dword [scroll_main], 0
         jmp     .done
 .signout:
         call    real_sign_out
@@ -678,4 +709,53 @@ PROC ui_key, 2
         xor     ecx, ecx
 .d2:    call    player_set_volume
 .yes:   mov     eax, 1
+.out:   EPROC
+
+; copies the redirect URI to the clipboard and confirms with a toast
+PROC app_copy_redirect, 4
+        mov     qword loc(1), 0
+        mov     qword loc(2), 0
+        mov     qword loc(3), 0
+        lea     rcx, loc(3)
+        call    redirect_uri_append
+        mov     rcx, loc(3)
+        call    os_clipboard
+        lea     rcx, loc(3)
+        call    buf_free
+        lea     rcx, [w_copied]
+        call    ui_toast
+        EPROC
+
+section .data
+WSTR w_copied, "Redirect URI copied"
+WSTR w_need_client, "Enter your Spotify Client ID first (step 3)."
+WSTR w_bad_port, "The port must be a number between 1024 and 65535."
+WSTR w_signin_soon, "Sign-in is not wired up in this build yet."
+section .text
+
+; Sign-in button.  Validates the setup fields; the OAuth flow itself lands in the next milestone.
+PROC app_sign_in_check, 0
+        cmp     byte [set_client_id], 0
+        jne     .port
+        lea     rcx, [w_need_client]
+        xor     edx, edx
+        xor     r8d, r8d
+        call    ui_banner
+        mov     dword [focus_req], 2
+        xor     eax, eax
+        jmp     .out
+.port:  mov     eax, [set_port]
+        cmp     eax, 1024
+        jb      .badport
+        cmp     eax, 65535
+        ja      .badport
+        mov     eax, 1
+        jmp     .out
+.badport:
+        lea     rcx, [w_bad_port]
+        xor     edx, edx
+        xor     r8d, r8d
+        call    ui_banner
+        mov     dword [focus_req], 3
+        xor     eax, eax
 .out:   EPROC

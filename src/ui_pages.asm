@@ -64,6 +64,20 @@ WSTR w_login_hint1, "Create a free app at developer.spotify.com/dashboard and ad
 WSTR w_login_hint2, "http://127.0.0.1:8989/callback as a redirect URI, then paste its client ID."
 WSTR w_login_hint3, "Playback needs a Spotify Premium account."
 WSTR w_loading, "Loading..."
+WSTR w_step1, "Create an app in the Spotify developer dashboard"
+WSTR w_step2, "Add this Redirect URI to that app"
+WSTR w_step3, "Paste the app's Client ID"
+WSTR w_n1, "1"
+WSTR w_n2, "2"
+WSTR w_n3, "3"
+WSTR w_open_dash, "Open dashboard"
+WSTR w_copy, "Copy"
+WSTR w_port, "Port"
+WSTR w_spotify, "Spotify"
+WSTR w_clientid_s, "Client ID"
+WSTR w_redirect_s, "Redirect URI (add this to your Spotify app)"
+WSTR w_login_note1, "Playback needs Spotify Premium. Apps in development mode allow up to 5 listed users."
+WSTR w_login_note2, "Everything here can be changed later in Settings."
 WSTR w_no_results, "No results"
 
 section .text
@@ -85,6 +99,7 @@ PROC page_begin, 0
         mov     [pg_w], eax
         mov     eax, [lay_pad]
         sub     eax, [scroll_main]
+        add     eax, [banner_h]                 ; the error banner sits above the page
         mov     [pg_y], eax
         HIT     dword [lay_main_x], 0, dword [lay_main_w], dword [lay_main_h], H_SHELL, 0
         mov     eax, [pg_y]
@@ -93,6 +108,7 @@ PROC page_begin, 0
 ; eax = y after the last element: records the content height and clamps the scroll position
 PROC page_end, 0
         add     eax, [scroll_main]
+        sub     eax, [banner_h]
         add     eax, [lay_pad]
         mov     [content_h], eax
         mov     ecx, [lay_main_h]
@@ -505,6 +521,114 @@ PROC page_detail, 8
         call    page_end
         EPROC
 
+; ---------------------------------------------------------------- shared setup widgets
+; Draws a rounded input surface and registers where the native EDIT must sit.
+; ecx = x, edx = y, r8d = w, r9d = h, [rbp+48] = which edit (1 client, 2 port)
+PROC draw_edit_frame, 4
+        mov     loc(0), rcx
+        mov     loc(1), rdx
+        mov     loc(2), r8
+        mov     loc(3), r9
+        SETCOL  T_SURFACE
+        mov     eax, dword loc(3)
+        shr     eax, 1
+        mov     outarg(5), rax
+        mov     ecx, dword loc(0)
+        mov     edx, dword loc(1)
+        mov     r8d, dword loc(2)
+        mov     r9d, dword loc(3)
+        call    gfx_rrect
+        S       14                              ; inner padding
+        mov     r12d, eax
+        mov     ecx, dword loc(0)
+        add     ecx, r12d                       ; edit x
+        mov     eax, dword loc(3)
+        S       12
+        mov     r13d, eax                       ; vertical padding
+        mov     edx, dword loc(1)
+        add     edx, r13d                       ; edit y
+        mov     r8d, dword loc(2)
+        sub     r8d, r12d
+        sub     r8d, r12d                       ; edit w
+        mov     r9d, dword loc(3)
+        sub     r9d, r13d
+        sub     r9d, r13d                       ; edit h
+        mov     eax, stk5
+        cmp     eax, 2
+        je      .port
+        mov     [edit_cx], ecx
+        mov     [edit_cy], edx
+        mov     [edit_cw], r8d
+        mov     [edit_ch], r9d
+        or      dword [edit_want], 2
+        jmp     .out
+.port:  mov     [edit_px], ecx
+        mov     [edit_py], edx
+        mov     [edit_pw], r8d
+        mov     [edit_ph], r9d
+        or      dword [edit_want], 4
+.out:   EPROC
+
+; The redirect URI in a box with a Copy button.  ecx = x, edx = y, r8d = w -> eax = y below
+PROC draw_uri_row, 6
+        mov     loc(0), rcx
+        mov     loc(1), rdx
+        mov     loc(2), r8
+        S       44
+        mov     loc(3), rax                     ; height
+        SETCOL  T_SURFACE
+        mov     eax, dword loc(3)
+        shr     eax, 1
+        mov     outarg(5), rax
+        mov     ecx, dword loc(0)
+        mov     edx, dword loc(1)
+        mov     r8d, dword loc(2)
+        mov     r9d, dword loc(3)
+        call    gfx_rrect
+        S       84                              ; Copy button
+        mov     r12d, eax
+        S       6
+        mov     r13d, eax
+        mov     eax, dword loc(0)
+        add     eax, dword loc(2)
+        sub     eax, r12d
+        sub     eax, r13d
+        mov     r14d, eax                       ; button x
+        mov     eax, dword loc(3)
+        sub     eax, r13d
+        sub     eax, r13d
+        mov     r15d, eax                       ; button height
+        mov     rcx, [redir_w]
+        test    rcx, rcx
+        jz      .btn
+        SETFONT F_BODY
+        SETCOL  T_FG
+        SETALIGN 0
+        S       16
+        mov     edx, dword loc(0)
+        add     edx, eax
+        mov     r9d, r14d
+        sub     r9d, edx
+        sub     r9d, r13d
+        mov     r8d, dword loc(1)
+        mov     rcx, [redir_w]
+        mov     eax, dword loc(3)
+        mov     outarg(5), rax
+        call    gfx_text
+.btn:   lea     rcx, [w_copy]
+        mov     edx, r14d
+        mov     r8d, dword loc(1)
+        add     r8d, r13d
+        mov     r9d, r12d
+        mov     outarg(5), r15
+        mov     qword outarg(6), H_COPY_URI
+        mov     qword outarg(7), 0
+        mov     qword outarg(8), 1
+        call    draw_button
+        mov     eax, dword loc(1)
+        add     eax, dword loc(3)
+        EPROC
+
 ; ---------------------------------------------------------------- Settings
 PROC page_settings, 8
         call    page_begin
@@ -524,7 +648,6 @@ PROC page_settings, 8
         mov     ebx, eax
         cmp     dword [g_demo], 0
         jne     .demo
-        ; "Signed in as <name>"
         mov     rcx, [user_name]
         TXT     rcx, dword [pg_x], r12d, dword [pg_w], ebx
         jmp     .acct
@@ -545,6 +668,80 @@ PROC page_settings, 8
         call    draw_button
         S       40
         add     r12d, eax
+        S       32
+        add     r12d, eax
+        ; ---- Spotify
+        lea     rcx, [w_spotify]
+        mov     edx, [pg_x]
+        mov     r8d, r12d
+        mov     r9d, [pg_w]
+        call    draw_section
+        mov     r12d, eax
+        S       520
+        mov     ebx, [pg_w]
+        cmp     ebx, eax
+        cmova   ebx, eax                        ; field width
+        SETFONT F_SMALL_B
+        SETCOL  T_MUTED_FG
+        S       22
+        mov     esi, eax
+        TXTL    w_clientid_s, dword [pg_x], r12d, ebx, esi
+        add     r12d, esi
+        S       46
+        mov     edi, eax
+        mov     ecx, [pg_x]
+        mov     edx, r12d
+        mov     r8d, ebx
+        mov     r9d, edi
+        mov     qword outarg(5), 1
+        call    draw_edit_frame
+        add     r12d, edi
+        S       16
+        add     r12d, eax
+        SETFONT F_SMALL_B
+        SETCOL  T_MUTED_FG
+        TXTL    w_redirect_s, dword [pg_x], r12d, ebx, esi
+        add     r12d, esi
+        mov     ecx, [pg_x]
+        mov     edx, r12d
+        mov     r8d, ebx
+        call    draw_uri_row
+        mov     r12d, eax
+        S       16
+        add     r12d, eax
+        ; port field and the dashboard button on one line
+        SETFONT F_BODY
+        SETCOL  T_FG
+        S       60
+        mov     r14d, eax
+        S       46
+        mov     edi, eax
+        TXTL    w_port, dword [pg_x], r12d, r14d, edi
+        mov     ecx, [pg_x]
+        add     ecx, r14d
+        mov     edx, r12d
+        S       110
+        mov     r8d, eax
+        mov     r9d, edi
+        mov     qword outarg(5), 2
+        call    draw_edit_frame
+        lea     rcx, [w_open_dash]
+        S       60
+        add     eax, r14d
+        S       110
+        add     eax, [pg_x]
+        mov     edx, eax
+        S       24
+        add     edx, eax
+        mov     r8d, r12d
+        S       170
+        mov     r9d, eax
+        mov     outarg(5), rdi
+        mov     qword outarg(6), H_OPEN_DASH
+        mov     qword outarg(7), 0
+        mov     qword outarg(8), 1
+        call    draw_button
+        add     r12d, edi
         S       36
         add     r12d, eax
         lea     rcx, [w_appearance]
@@ -613,40 +810,66 @@ PROC page_settings, 8
         call    page_end
         EPROC
 
-; ---------------------------------------------------------------- Login
-PROC page_login, 8
-        xor     ecx, ecx
-        xor     edx, edx
-        mov     r8d, [ui_w]
-        mov     r9d, [ui_h]
-        call    ui_clip
-        HIT     0, 0, dword [ui_w], dword [ui_h], H_SHELL, 0
-        S       460
-        mov     ebx, [ui_w]
+; ---------------------------------------------------------------- Login / first-run setup
+; numbered step heading: rcx = number (UTF-16), rdx = text (UTF-16), r8d = x, r9d = y
+PROC draw_step, 4
+        mov     loc(0), rcx
+        mov     loc(1), rdx
+        mov     loc(2), r8
+        mov     loc(3), r9
+        S       28
+        mov     r12d, eax
+        SETCOL  T_SURFACE
+        mov     ecx, dword loc(2)
+        mov     edx, dword loc(3)
+        mov     r8d, r12d
+        mov     r9d, r12d
+        call    gfx_ellipse
+        SETFONT F_SMALL_B
+        SETCOL  T_FG
+        SETALIGN 1
+        mov     rcx, loc(0)
+        mov     edx, dword loc(2)
+        mov     r8d, dword loc(3)
+        mov     r9d, r12d
+        mov     outarg(5), r12
+        call    gfx_text
+        SETALIGN 0
+        SETFONT F_BODY_B
+        SETCOL  T_FG
+        S       40
+        mov     edx, dword loc(2)
+        add     edx, eax
+        mov     r8d, dword loc(3)
+        mov     r9d, 400
+        mov     rcx, loc(1)
+        mov     outarg(5), r12
+        call    gfx_text
+        EPROC
+
+PROC page_login, 12
+        call    page_begin
+        mov     r12d, eax
+        S       520
+        mov     ebx, [pg_w]
         cmp     ebx, eax
-        cmova   ebx, eax
-        S       24
-        sub     ebx, eax
-        sub     ebx, eax                        ; column width
-        cmp     ebx, 0
-        jg      .w
-        mov     ebx, 100
-.w:     mov     r13d, [ui_w]
+        cmova   ebx, eax                        ; column width
+        mov     r13d, [ui_w]
         sub     r13d, ebx
         shr     r13d, 1                         ; column x
-        S       500
-        mov     r12d, [ui_h]
-        sub     r12d, eax
-        shr     r12d, 1                         ; column y
-        S       24
-        cmp     r12d, eax
-        jge     .y
-        mov     r12d, eax
-.y:     ; logo
-        S       64
+        cmp     dword [scroll_main], 0          ; centre vertically while everything fits
+        jne     .start
+        S       650
+        mov     ecx, [ui_h]
+        sub     ecx, eax
+        jle     .start
+        shr     ecx, 1
+        add     r12d, ecx
+.start: ; logo
+        S       56
         mov     esi, eax
         SETCOL  T_ACCENT
-        S       18
+        S       16
         mov     outarg(5), rax
         mov     ecx, r13d
         mov     edx, r12d
@@ -655,7 +878,7 @@ PROC page_login, 8
         call    gfx_rrect
         mov     ecx, 0xFFFFFFFF
         call    gfx_color
-        S       14
+        S       13
         lea     ecx, [r13+rax]
         lea     edx, [r12+rax]
         mov     r8d, esi
@@ -663,58 +886,101 @@ PROC page_login, 8
         sub     r8d, eax
         lea     r9, [ic_note]
         call    icon_draw
-        S       88
+        S       76
         add     r12d, eax
         SETFONT F_H1
         SETCOL  T_FG
-        S       48
+        S       44
         TXTL    w_welcome, r13d, r12d, ebx, eax
-        S       54
+        S       50
         add     r12d, eax
         SETFONT F_BODY
         SETCOL  T_MUTED_FG
-        S       26
+        S       24
         TXTL    w_login_sub, r13d, r12d, ebx, eax
-        S       56
+        S       44
         add     r12d, eax
-        SETFONT F_SMALL_B
-        SETCOL  T_FG
-        S       22
-        TXTL    w_clientid_lbl, r13d, r12d, ebx, eax
-        S       26
-        add     r12d, eax
-        ; client id box
-        S       46
-        mov     r14d, eax
-        SETCOL  T_SURFACE
-        mov     eax, r14d
-        shr     eax, 1
+        ; step 1: dashboard
+        lea     rcx, [w_n1]
+        lea     rdx, [w_step1]
+        mov     r8d, r13d
+        mov     r9d, r12d
+        call    draw_step
+        lea     rcx, [w_open_dash]
+        S       150
+        mov     r9d, eax
+        mov     edx, r13d
+        add     edx, ebx
+        sub     edx, eax
+        mov     r8d, r12d
+        S       36
         mov     outarg(5), rax
+        mov     qword outarg(6), H_OPEN_DASH
+        mov     qword outarg(7), 0
+        mov     qword outarg(8), 1
+        call    draw_button
+        S       52
+        add     r12d, eax
+        ; step 2: redirect URI, with the port field at the right of the heading
+        lea     rcx, [w_n2]
+        lea     rdx, [w_step2]
+        mov     r8d, r13d
+        mov     r9d, r12d
+        call    draw_step
+        S       84
+        mov     edi, eax                        ; port field width
+        S       36
+        mov     esi, eax                        ; port field height
+        mov     ecx, r13d
+        add     ecx, ebx
+        sub     ecx, edi                        ; port field x
+        mov     edx, r12d
+        mov     r8d, edi
+        mov     r9d, esi
+        mov     qword outarg(5), 2
+        mov     dword loc(6), ecx
+        call    draw_edit_frame
+        SETFONT F_BODY
+        SETCOL  T_MUTED_FG
+        SETALIGN 2
+        S       50
+        mov     r9d, eax
+        S       8
+        mov     edx, dword loc(6)
+        sub     edx, eax
+        sub     edx, r9d                        ; label x
+        mov     r8d, r12d
+        lea     rcx, [w_port]
+        mov     outarg(5), rsi
+        call    gfx_text
+        SETALIGN 0
+        S       48
+        add     r12d, eax
         mov     ecx, r13d
         mov     edx, r12d
         mov     r8d, ebx
-        mov     r9d, r14d
-        call    gfx_rrect
-        S       18
-        lea     ecx, [r13+rax]
-        mov     [edit_cx], ecx
-        S       12
-        lea     edx, [r12+rax]
-        mov     [edit_cy], edx
-        mov     eax, r14d
-        S       12
-        mov     ecx, eax
-        mov     eax, r14d
-        sub     eax, ecx
-        sub     eax, ecx
-        mov     [edit_ch], eax
-        S       36
-        mov     ecx, ebx
-        sub     ecx, eax
-        mov     [edit_cw], ecx
-        or      dword [edit_want], 2
-        add     r12d, r14d
-        S       18
+        call    draw_uri_row
+        mov     r12d, eax
+        S       24
+        add     r12d, eax
+        ; step 3: client id
+        lea     rcx, [w_n3]
+        lea     rdx, [w_step3]
+        mov     r8d, r13d
+        mov     r9d, r12d
+        call    draw_step
+        S       40
+        add     r12d, eax
+        S       46
+        mov     edi, eax
+        mov     ecx, r13d
+        mov     edx, r12d
+        mov     r8d, ebx
+        mov     r9d, edi
+        mov     qword outarg(5), 1
+        call    draw_edit_frame
+        add     r12d, edi
+        S       24
         add     r12d, eax
         lea     rcx, [w_signin]
         mov     edx, r13d
@@ -738,16 +1004,16 @@ PROC page_login, 8
         mov     qword outarg(7), 0
         mov     qword outarg(8), 1
         call    draw_button
-        S       66
+        S       62
         add     r12d, eax
         SETFONT F_CAPTION
         SETCOL  T_MUTED_FG
         S       18
         mov     esi, eax
-        TXTL    w_login_hint1, r13d, r12d, ebx, esi
+        TXTL    w_login_note1, r13d, r12d, ebx, esi
         add     r12d, esi
-        TXTL    w_login_hint2, r13d, r12d, ebx, esi
+        TXTL    w_login_note2, r13d, r12d, ebx, esi
         add     r12d, esi
-        TXTL    w_login_hint3, r13d, r12d, ebx, esi
-        call    ui_unclip
+        mov     eax, r12d
+        call    page_end
         EPROC

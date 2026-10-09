@@ -10,6 +10,7 @@ extern GdipCreateFromHDC, CreateFileW, CloseHandle, WriteFile
 
 %define ID_EDIT_SEARCH   101
 %define ID_EDIT_CLIENT   102
+%define ID_EDIT_PORT     103
 %define TIMER_TICK       1
 %define TIMER_SEARCH     2
 %define EN_CHANGE        0x0300
@@ -39,8 +40,9 @@ ps_buf:         resb 72
 rc_buf:         resb 16
 tme_buf:        resb 24
 bmi_buf:        resb 48
-edit_last:      resd 8                  ; last rectangle given to each EDIT (x y w h) x2
-edit_vis:       resd 2
+edit_last:      resd 12                 ; last rectangle given to each EDIT (x y w h) x3
+edit_vis:       resd 3
+edit_text:      resw 200
 search_buf:     resw 260
 shot_hdr:       resb 64
 mmi_min_w:      resd 1
@@ -169,6 +171,7 @@ PROC render_frame, 2
         call    paint_queue
         call    paint_player_bar
 .overlays:
+        call    paint_banner
         call    paint_fullscreen
         call    paint_toast
 .out:   EPROC
@@ -200,6 +203,17 @@ PROC sync_edits, 0
         lea     rsi, [edit_last+16]
         lea     rdi, [edit_vis+4]
         call    place_edit
+        mov     eax, [edit_want]
+        shr     eax, 2
+        and     eax, 1
+        mov     edx, [edit_px]
+        mov     r8d, [edit_py]
+        mov     r9d, [edit_pw]
+        mov     ecx, [edit_ph]
+        mov     rbx, [edit_port]
+        lea     rsi, [edit_last+32]
+        lea     rdi, [edit_vis+8]
+        call    place_edit
         cmp     dword [focus_req], 0
         je      .out
         cmp     dword [focus_req], 1
@@ -208,7 +222,10 @@ PROC sync_edits, 0
         call    SetFocus
         jmp     .done
 .cl:    mov     rcx, [edit_client]
-        call    SetFocus
+        cmp     dword [focus_req], 3
+        jne     .cl2
+        mov     rcx, [edit_port]
+.cl2:   call    SetFocus
 .done:  mov     dword [focus_req], 0
 .out:   EPROC
 
@@ -603,6 +620,10 @@ PROC wndproc, 12
         cmp     ecx, EN_CHANGE
         jne     .zero
         movzx   eax, ax
+        cmp     eax, ID_EDIT_CLIENT
+        je      .client_changed
+        cmp     eax, ID_EDIT_PORT
+        je      .port_changed
         cmp     eax, ID_EDIT_SEARCH
         jne     .zero
         mov     rcx, [edit_search]
@@ -614,6 +635,13 @@ PROC wndproc, 12
         mov     r8d, 350
         xor     r9d, r9d
         call    SetTimer
+        jmp     .zero
+
+.client_changed:
+        call    on_client_changed
+        jmp     .zero
+.port_changed:
+        call    on_port_changed
         jmp     .zero
 
 .ctlcolor:
@@ -819,4 +847,103 @@ PROC window_create, 8
         mov     qword outarg(12), 0
         call    CreateWindowExW
         mov     [hwnd], rax
+        EPROC
+
+; ---------------------------------------------------------------- setup inputs -> settings
+PROC redir_refresh, 4
+        mov     rcx, [redir_w]
+        call    mem_free
+        mov     qword loc(1), 0                 ; Buf based at &loc(3)
+        mov     qword loc(2), 0
+        mov     qword loc(3), 0
+        lea     rcx, loc(3)
+        call    redirect_uri_append
+        mov     rcx, loc(3)
+        mov     rdx, -1
+        call    u8_to_w
+        mov     [redir_w], rax
+        lea     rcx, loc(3)
+        call    buf_free
+        EPROC
+
+; the Client ID box changed: trim, store, save
+PROC on_client_changed, 2
+        cmp     dword [edit_syncing], 0
+        jne     .out
+        mov     rcx, [edit_client]
+        lea     rdx, [edit_text]
+        mov     r8d, 190
+        call    GetWindowTextW
+        lea     rcx, [edit_text]
+        mov     rdx, -1
+        call    w_to_u8
+        mov     loc(0), rax
+        mov     rsi, rax                        ; trim leading blanks
+.lead:  cmp     byte [rsi], ' '
+        jne     .copy
+        inc     rsi
+        jmp     .lead
+.copy:  lea     rdi, [set_client_id]
+        xor     ecx, ecx
+.cp:    cmp     ecx, 150
+        jae     .end
+        mov     al, [rsi+rcx]
+        test    al, al
+        jz      .end
+        mov     [rdi+rcx], al
+        inc     ecx
+        jmp     .cp
+.end:   mov     byte [rdi+rcx], 0
+.trim:  test    ecx, ecx                        ; trim trailing blanks
+        jz      .done
+        cmp     byte [rdi+rcx-1], ' '
+        jne     .done
+        dec     ecx
+        mov     byte [rdi+rcx], 0
+        jmp     .trim
+.done:  mov     rcx, loc(0)
+        call    mem_free
+        call    settings_save
+.out:   EPROC
+
+; the Port box changed: accept 1024..65535, refresh the displayed redirect URI, save
+PROC on_port_changed, 2
+        cmp     dword [edit_syncing], 0
+        jne     .out
+        mov     rcx, [edit_port]
+        lea     rdx, [edit_text]
+        mov     r8d, 12
+        call    GetWindowTextW
+        lea     rcx, [edit_text]
+        call    w_atoi
+        cmp     eax, 1024
+        jb      .out
+        cmp     eax, 65535
+        ja      .out
+        mov     [set_port], eax
+        call    redir_refresh
+        call    settings_save
+.out:   EPROC
+
+; puts the stored settings into the inputs without triggering saves
+PROC edit_fill_from_settings, 4
+        mov     dword [edit_syncing], 1
+        lea     rcx, [set_client_id]
+        mov     rdx, -1
+        call    u8_to_w
+        mov     loc(0), rax
+        mov     rcx, [edit_client]
+        mov     rdx, rax
+        call    SetWindowTextW
+        mov     rcx, loc(0)
+        call    mem_free
+        lea     rcx, [edit_text]
+        mov     edx, [set_port]
+        call    w_put_u64
+        mov     word [rax], 0
+        mov     rcx, [edit_port]
+        lea     rdx, [edit_text]
+        call    SetWindowTextW
+        mov     dword [edit_syncing], 0
+        call    redir_refresh
         EPROC

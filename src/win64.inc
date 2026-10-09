@@ -47,6 +47,8 @@ default rel
 %define home4   [rbp+40]
 %define stk5    [rbp+48]
 %define stk6    [rbp+56]
+%define stk7    [rbp+64]
+%define stk8    [rbp+72]
 
 ; stack-argument slot for outgoing call (5th arg = 5, 6th = 6, ...)
 %define outarg(i) [rsp+32+8*((i)-5)]

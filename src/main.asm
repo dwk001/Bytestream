@@ -3,6 +3,10 @@
 %include "core.asm"
 %include "json.asm"
 %include "model.asm"
+%include "http.asm"
+%include "net.asm"
+%include "settings.asm"
+%include "os.asm"
 %include "fixtures.asm"
 %include "theme.asm"
 %include "gfx.asm"
@@ -41,11 +45,22 @@ cli_search:     resq 1                  ; UTF-16 text or 0
 cli_vol:        resd 1                  ; -1 = default
 cli_pos:        resd 1                  ; -1 = default (seek position in seconds)
 cli_dump:       resd 1
+cli_http_url:   resq 1                  ; --http-test URL (developer probe)
+cli_api_base:   resq 1                  ; UTF-8 overrides for the fake server
+cli_auth_base:  resq 1
+cli_data_dir:   resq 1                  ; UTF-16
+cli_nget:       resd 1
+cli_get:        resq 8                  ; --net-get paths (UTF-16)
+cli_type_client: resq 1
+cli_type_port:  resq 1
+cli_http_meth:  resq 1
+cli_http_body:  resq 1
 cli_nact:       resd 1
 cli_ready:      resd 1                  ; set once scripted actions are done (screenshot may be taken)
 cli_act_id:     resd 8
 cli_act_arg:    resd 8
-dump_buf:       resb 512
+dump_buf:       resb 1024
+dump_tmp:       resd 1
 
 section .data
 WSTR a_selftest, "--selftest"
@@ -64,6 +79,21 @@ WSTR a_hover, "--hover"
 WSTR a_search, "--search"
 WSTR a_vol, "--volume"
 WSTR a_pos, "--seek"
+WSTR a_http, "--http-test"
+WSTR a_api, "--api-base"
+WSTR a_authb, "--auth-base"
+WSTR a_ddir, "--data-dir"
+WSTR a_nobrowser, "--no-browser"
+WSTR a_netget, "--net-get"
+WSTR a_tclient, "--type-client"
+WSTR a_tport, "--type-port"
+WSTR a_hmeth, "--http-method"
+WSTR a_hbody, "--http-body"
+WSTR w_get, "GET"
+ZSTR s_status, "status="
+s_nl_z: db 10, 0
+ZSTR s_body_hdr, "body="
+ZSTR s_transport, "status=0 transport-error="
 ZSTR s_act_missing, "error: --act target not on screen"
 ZSTR d_page, "page="
 ZSTR d_tab, "tab="
@@ -81,6 +111,15 @@ ZSTR d_search_t, "search_tracks="
 ZSTR d_playlists, "playlists="
 ZSTR d_title, "title="
 ZSTR d_detail, "detail="
+ZSTR d_port, "port="
+ZSTR d_net_n, "net_n="
+ZSTR d_net0, "net_0="
+ZSTR d_net1, "net_1="
+ZSTR d_net2, "net_2="
+ZSTR d_net3, "net_3="
+ZSTR d_pending, "net_pending="
+ZSTR d_banner, "banner="
+ZSTR d_client, "client_id="
 WSTR a_act, "--act"
 WSTR a_dump, "--dump"
 
@@ -149,6 +188,7 @@ arg_is:
 ; Parses argv into the cli_* globals.   loc(0) = argc, loc(1) = argv, loc(2) = index
 PROC parse_cli, 4
         mov     dword [cli_page], -1
+        mov     dword [cli_theme], -1
         mov     dword [cli_tab], -1
         mov     dword [cli_detail], -1
         mov     dword [cli_vol], -1
@@ -215,7 +255,14 @@ PROC parse_cli, 4
         jz      .a6
         mov     dword [cli_dump], 1
         jmp     .next
-.a6:    test    rsi, rsi
+.a6:    mov     rcx, rbx
+        lea     rdx, [a_nobrowser]
+        call    arg_is
+        test    eax, eax
+        jz      .a7
+        mov     dword [cli_no_shell], 1
+        jmp     .next
+.a7:    test    rsi, rsi
         jz      .next                           ; remaining flags all take a value
         mov     rcx, rbx
         lea     rdx, [a_shot]
@@ -327,6 +374,89 @@ PROC parse_cli, 4
         inc     qword loc(2)
         jmp     .next
 .b11:   mov     rcx, rbx
+        lea     rdx, [a_http]
+        call    arg_is
+        test    eax, eax
+        jz      .b12
+        mov     [cli_http_url], rsi
+        inc     qword loc(2)
+        jmp     .next
+.b12:   mov     rcx, rbx
+        lea     rdx, [a_hmeth]
+        call    arg_is
+        test    eax, eax
+        jz      .b13
+        mov     [cli_http_meth], rsi
+        inc     qword loc(2)
+        jmp     .next
+.b13:   mov     rcx, rbx
+        lea     rdx, [a_hbody]
+        call    arg_is
+        test    eax, eax
+        jz      .b14
+        mov     [cli_http_body], rsi
+        inc     qword loc(2)
+        jmp     .next
+.b14:   mov     rcx, rbx
+        lea     rdx, [a_api]
+        call    arg_is
+        test    eax, eax
+        jz      .b15
+        mov     rcx, rsi
+        mov     rdx, -1
+        call    w_to_u8
+        mov     [cli_api_base], rax
+        inc     qword loc(2)
+        jmp     .next
+.b15:   mov     rcx, rbx
+        lea     rdx, [a_authb]
+        call    arg_is
+        test    eax, eax
+        jz      .b16
+        mov     rcx, rsi
+        mov     rdx, -1
+        call    w_to_u8
+        mov     [cli_auth_base], rax
+        inc     qword loc(2)
+        jmp     .next
+.b16:   mov     rcx, rbx
+        lea     rdx, [a_ddir]
+        call    arg_is
+        test    eax, eax
+        jz      .b17
+        mov     [cli_data_dir], rsi
+        inc     qword loc(2)
+        jmp     .next
+.b17:   mov     rcx, rbx
+        lea     rdx, [a_netget]
+        call    arg_is
+        test    eax, eax
+        jz      .b18
+        mov     eax, [cli_nget]
+        cmp     eax, 8
+        jae     .b17s
+        lea     rcx, [cli_get]
+        mov     [rcx+rax*8], rsi
+        inc     dword [cli_nget]
+.b17s:  inc     qword loc(2)
+        jmp     .next
+.b18:   mov     rcx, rbx
+        lea     rdx, [a_tclient]
+        call    arg_is
+        test    eax, eax
+        jz      .b19
+        mov     [cli_type_client], rsi
+        inc     qword loc(2)
+        jmp     .next
+.b19:   mov     rcx, rbx
+        lea     rdx, [a_tport]
+        call    arg_is
+        test    eax, eax
+        jz      .b20
+        mov     [cli_type_port], rsi
+        inc     qword loc(2)
+        jmp     .next
+.b20:   mov     rcx, rbx
         lea     rdx, [a_act]
         call    arg_is
         test    eax, eax
@@ -349,10 +479,6 @@ PROC parse_cli, 4
 
 ; Applies the automation flags once the window and data exist.
 PROC apply_cli, 2
-        mov     eax, [cli_theme]
-        mov     ecx, eax
-        call    theme_set
-        call    ui_theme_changed
         cmp     dword [cli_page], -1
         je      .p1
         mov     eax, [cli_page]
@@ -398,6 +524,51 @@ PROC apply_cli, 2
         mov     [fullscreen], eax
         mov     eax, [cli_queue]
         mov     [queue_open], eax
+        EPROC
+
+; --type-client / --type-port put text into the inputs as if typed (EN_CHANGE fires, settings are saved),
+; and --net-get paths are requested through the job queue.
+PROC run_scripted_input, 4
+        mov     rdx, [cli_type_client]
+        test    rdx, rdx
+        jz      .p
+        mov     rcx, [edit_client]
+        call    SetWindowTextW
+.p:     mov     rdx, [cli_type_port]
+        test    rdx, rdx
+        jz      .g
+        mov     rcx, [edit_port]
+        call    SetWindowTextW
+.g:     xor     ebx, ebx
+        mov     qword loc(1), 0                 ; Buf based at &loc(3)
+        mov     qword loc(2), 0
+        mov     qword loc(3), 0
+.gl:    cmp     ebx, [cli_nget]
+        jae     .gd
+        lea     rax, [cli_get]
+        mov     rcx, [rax+rbx*8]
+        mov     rdx, -1
+        call    w_to_u8
+        mov     rsi, rax
+        lea     rcx, loc(3)
+        mov     rdx, rsi
+        call    api_url
+        mov     rcx, rsi
+        call    mem_free
+        xor     ecx, ecx
+        mov     edx, TAG_DEBUG
+        mov     r8, rbx
+        lea     r9, [w_get]
+        mov     rax, loc(3)
+        mov     outarg(5), rax
+        mov     qword outarg(6), 0
+        mov     qword outarg(7), 0
+        mov     qword outarg(8), 0
+        call    net_submit
+        inc     ebx
+        jmp     .gl
+.gd:    lea     rcx, loc(3)
+        call    buf_free
         EPROC
 
 ; Runs the --act list: each entry activates a hit target that really exists on screen.
@@ -471,6 +642,28 @@ PROC dump_state, 4
         DUMPNUM d_queued, dword [q_up+LS_COUNT]
         DUMPNUM d_search_t, dword [lst_search_t+LS_COUNT]
         DUMPNUM d_playlists, dword [lst_playlists+LS_COUNT]
+        DUMPNUM d_port, dword [set_port]
+        DUMPNUM d_net_n, dword [dbg_count]
+        DUMPNUM d_net0, dword [dbg_results]
+        DUMPNUM d_net1, dword [dbg_results+8]
+        DUMPNUM d_net2, dword [dbg_results+16]
+        DUMPNUM d_net3, dword [dbg_results+24]
+        DUMPNUM d_pending, dword [net_pending]
+        xor     eax, eax
+        cmp     qword [banner_text], 0
+        setne   al
+        mov     [dump_tmp], eax                 ; DUMPNUM clobbers eax before it reads its operand
+        DUMPNUM d_banner, dword [dump_tmp]
+        mov     rcx, rdi
+        lea     rdx, [d_client]
+        call    dump_str
+        mov     rdi, rax
+        mov     rcx, rdi
+        lea     rdx, [set_client_id]
+        call    dump_str
+        mov     rdi, rax
+        mov     byte [rdi], 10
+        inc     rdi
         ; strings
         mov     rcx, rdi
         lea     rdx, [d_title]
@@ -527,19 +720,109 @@ dump_str:
 .d:     mov     rax, rcx
         ret
 
+; --http-test URL [--http-method M] [--http-body S]: one request through the real HTTP layer, result on stdout.
+PROC http_probe, 12
+        mov     rcx, [cli_http_url]
+        mov     rdx, -1
+        sub     rsp, 0
+        mov     rax, rcx
+        call    w_to_u8                         ; URL is UTF-16 on the command line; the client wants UTF-8
+        mov     loc(0), rax                     ; url (utf8)
+        lea     rax, [w_get]
+        mov     loc(1), rax                     ; method (wide)
+        xor     eax, eax
+        mov     loc(2), rax                     ; owned method (utf16) to free, if any
+        mov     rcx, [cli_http_meth]
+        test    rcx, rcx
+        jz      .nm
+        mov     loc(1), rcx
+.nm:    mov     qword loc(3), 0                 ; body (utf8)
+        mov     qword loc(4), 0
+        mov     rcx, [cli_http_body]
+        test    rcx, rcx
+        jz      .nb
+        mov     rdx, -1
+        call    w_to_u8
+        mov     loc(3), rax
+        mov     loc(4), rdx
+.nb:    mov     qword loc(7), 0                 ; response Buf at &loc(7): ptr=loc(7) len=loc(6) cap=loc(5)
+        mov     qword loc(6), 0
+        mov     qword loc(5), 0
+        lea     rax, [hdr_probe]
+        mov     rcx, loc(1)
+        mov     rdx, loc(0)
+        mov     r8, rax
+        mov     r9, loc(3)
+        mov     rax, loc(4)
+        mov     outarg(5), rax
+        lea     rax, loc(7)
+        mov     outarg(6), rax
+        mov     qword outarg(7), 0
+        call    http_request
+        mov     loc(8), rax
+        lea     rcx, [s_status]
+        call    out_z
+        lea     rcx, loc(9)                     ; "<n>\n" built in a scratch qword pair
+        mov     rdx, loc(8)
+        call    u8_put_u64
+        mov     byte [rax], 10
+        mov     byte [rax+1], 0
+        lea     rcx, loc(9)
+        call    out_z
+        lea     rcx, [s_body_hdr]
+        call    out_z
+        mov     rcx, loc(7)
+        test    rcx, rcx
+        jz      .nobody
+        call    out_z
+.nobody:
+        lea     rcx, [s_nl_z]
+        call    out_z
+        xor     ecx, ecx
+        cmp     qword loc(8), 0
+        setz    cl
+        mov     eax, ecx                        ; exit code 1 on transport failure
+        EPROC
+
+section .data
+WSTR hdr_probe, `Authorization: Bearer probe-token\r\nContent-Type: application/json\r\nX-ByteStream: probe\r\n`
+section .text
+
 global start
 PROC start, 8
         call    core_init
         call    parse_cli
         cmp     dword [cli_selftest], 0
-        je      .gui
+        je      .nst
         call    selftest
         mov     ecx, eax
         call    ExitProcess
+.nst:   cmp     qword [cli_http_url], 0
+        je      .gui
+        call    http_init
+        call    http_probe
+        mov     ecx, eax
+        call    ExitProcess
+        ; (windowed mode)
 .gui:   call    SetProcessDPIAware
-        call    gfx_init
+        mov     rcx, [cli_data_dir]
+        call    settings_init
+        call    http_init
+        mov     rcx, [cli_api_base]
+        mov     rdx, [cli_auth_base]
+        call    net_init
+        mov     eax, [set_volume]
+        mov     [np_vol], eax
+        cmp     dword [cli_theme], -1
+        jne     .thm
+        mov     eax, [set_theme]
+        mov     [cli_theme], eax
+.thm:   cmp     dword [cli_scale], 0
+        jne     .scl
+        mov     eax, [set_scale]
+        mov     [cli_scale], eax
+.scl:   call    gfx_init
         mov     dword [detail_sel], -1
-        mov     dword [np_vol], 70
         ; scale: system DPI, or the --scale override
         call    GetDpiForSystem
         imul    eax, 65536
@@ -579,6 +862,10 @@ PROC start, 8
         mov     ecx, ID_EDIT_CLIENT
         call    make_edit
         mov     [edit_client], rax
+        mov     ecx, ID_EDIT_PORT
+        call    make_edit
+        mov     [edit_port], rax
+        call    edit_fill_from_settings
         mov     rcx, [edit_search]
         mov     edx, 0x1501                     ; EM_SETCUEBANNER
         mov     r8d, 1
@@ -588,6 +875,11 @@ PROC start, 8
         mov     edx, 0x1501
         mov     r8d, 1
         lea     r9, [w_cue_client]
+        call    SendMessageW
+        mov     rcx, [edit_port]
+        mov     edx, 0x00C5                     ; EM_LIMITTEXT
+        mov     r8d, 5
+        xor     r9d, r9d
         call    SendMessageW
         cmp     dword [cli_demo], 0
         je      .login
@@ -601,7 +893,10 @@ PROC start, 8
         call    ShowWindow
         mov     rcx, [hwnd]
         call    UpdateWindow
+        call    run_scripted_input
         call    run_acts
+        mov     ecx, 15000
+        call    net_wait_idle
         cmp     dword [cli_hover], 0
         je      .hv
         mov     ecx, [cli_hx]
@@ -636,6 +931,7 @@ PROC start, 8
         lea     rcx, [msg_buf]
         call    DispatchMessageW
         jmp     .loop
-.exit:  xor     ecx, ecx
+.exit:  call    settings_save
+        xor     ecx, ecx
         call    ExitProcess
         EPROC

@@ -41,6 +41,14 @@ extern CreateFontIndirectW, CreateSolidBrush, SetTextColor, SetBkColor
 %define H_NP_COVER    23
 %define H_DEMO        24
 %define H_SHELL       25                ; inert surface that swallows clicks
+%define H_COPY_URI    28
+%define H_OPEN_DASH   29
+%define H_BANNER_X    30
+%define H_BANNER_ACT  31
+
+%define BA_NONE       0
+%define BA_SETTINGS   1                 ; banner action: open Settings
+%define BA_DASHBOARD  2                 ; banner action: open the Spotify dashboard
 
 ; ---- track / card list sources used in H_TRACK / H_CARD args
 %define SRC_RECENT    1
@@ -112,7 +120,18 @@ signed_in:      resd 1
 edit_font:      resq 1
 edit_brush:     resq 1
 edit_search:    resq 1
+edit_px:        resd 1                  ; port field rectangle
+edit_py:        resd 1
+edit_pw:        resd 1
+edit_ph:        resd 1
+edit_syncing:   resd 1                  ; set while the program (not the user) fills an input
 edit_client:    resq 1
+edit_port:      resq 1
+banner_text:    resq 1                  ; UTF-16, owned (0 = none)
+banner_label:   resq 1                  ; UTF-16, owned: action button label (0 = none)
+banner_code:    resd 1
+banner_h:       resd 1
+redir_w:        resq 1                  ; UTF-16 copy of the redirect URI for display
 search_dirty:   resd 1
 user_name:      resq 1                  ; UTF-16, owned
 logfont:        resb 96
