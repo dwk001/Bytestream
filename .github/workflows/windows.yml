@@ -1,0 +1,62 @@
+name: windows
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install NASM
+        shell: pwsh
+        run: |
+          choco install nasm -y --no-progress
+          "C:\Program Files\NASM" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Tool versions
+        shell: pwsh
+        run: |
+          nasm -v
+          lld-link --version
+          llvm-readobj --version | Select-Object -First 2
+          python --version
+
+      - name: Build
+        shell: pwsh
+        run: python tools/build.py
+
+      - name: Test (runs the real .exe on Windows)
+        shell: pwsh
+        run: python tests/run_tests.py
+
+      - name: Render screenshots
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path shots | Out-Null
+          $exe = "build\bytestream.exe"
+          foreach ($s in @(
+            @("home", "--demo --play --seek 83"),
+            @("library", "--demo --page 2"),
+            @("settings", "--demo --page 4"),
+            @("login", ""),
+            @("fullscreen", "--demo --play --seek 61 --fullscreen"),
+            @("light", "--demo --play --theme 2 --seek 83"))) {
+            $args = @()
+            if ($s[1] -ne "") { $args += $s[1].Split(" ") }
+            $args += @("--data-dir", "$env:RUNNER_TEMP\bs-$($s[0])", "--screenshot", "shots\$($s[0]).bmp")
+            Start-Process -FilePath $exe -ArgumentList $args -Wait -NoNewWindow
+            python tools/bmp2png.py "shots\$($s[0]).bmp" "shots\$($s[0]).png"
+          }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bytestream-windows
+          path: |
+            build/bytestream.exe
+            build/bytestream.map
+            shots/*.png
