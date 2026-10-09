@@ -8,7 +8,7 @@ A function missing from this table shows up as an undefined symbol at link time.
 import os, subprocess, sys
 
 IMPORTS = {
-    "kernel32": """ExitProcess GetProcessHeap HeapAlloc HeapFree HeapReAlloc GetCommandLineW GetModuleHandleW GetProcAddress
+    "kernel32": """ExitProcess GetProcessHeap HeapAlloc HeapFree HeapReAlloc GetCommandLineW GetModuleHandleW GetProcAddress AddVectoredExceptionHandler
         MultiByteToWideChar WideCharToMultiByte lstrlenW lstrcpyW lstrcmpW lstrcmpiW CreateFileW WriteFile ReadFile
         CloseHandle GetLastError CreateThread GetCurrentThreadId Sleep GetTickCount64 GetEnvironmentVariableW
         SetEnvironmentVariableW GetFileSizeEx CreateDirectoryW GetStdHandle LocalFree GetModuleFileNameW

@@ -6,7 +6,7 @@
 ; frame chain, all as RVAs, so a report can be matched against build/bytestream.map (tools/crashmap.py).
 
 extern SetUnhandledExceptionFilter, MoveFileExW, GetLocalTime, MessageBoxW, GetModuleHandleW
-extern RtlGetVersion, CreateMutexW, FindWindowW, SetForegroundWindow, GetLastError, GetProcAddress
+extern RtlGetVersion, CreateMutexW, FindWindowW, SetForegroundWindow, GetLastError, GetProcAddress, AddVectoredExceptionHandler
 
 %define LOG_ROTATE_BYTES  524288
 
@@ -17,6 +17,7 @@ extern RtlGetVersion, CreateMutexW, FindWindowW, SetForegroundWindow, GetLastErr
 section .bss
 log_h:          resq 1
 log_lock:       resd 1
+crash_quiet:    resd 1
 log_path:       resw 560
 log_old_path:   resw 560
 os_ver:         resd 7                  ; major, minor, build (RTL_OSVERSIONINFOW is 276 bytes; we keep the head)
@@ -312,6 +313,9 @@ PROC log_num, 6
 PROC crash_install, 2
         lea     rcx, [crash_filter]
         call    SetUnhandledExceptionFilter
+        mov     ecx, 1                          ; first in line: sees a fault even when the system then swallows it
+        lea     rdx, [veh_handler]
+        call    AddVectoredExceptionHandler
         lea     rcx, [w_kernel32_dll]
         call    GetModuleHandleW
         test    rax, rax
@@ -335,6 +339,31 @@ PROC crash_install, 2
         mov     ecx, dword loc(0)
         and     ecx, ~1                         ; PROCESS_CALLBACK_FILTER_ENABLED
         call    rdi                             ; SetProcessUserModeExceptionPolicy(flags)
+.out:   EPROC
+
+; LONG CALLBACK veh_handler(EXCEPTION_POINTERS* rcx): writes the same report for the faults that mean a bug (access
+; violation, illegal instruction, divide by zero, stack overflow ...) and always lets the exception carry on.
+PROC veh_handler, 0
+        mov     rax, [rcx]
+        mov     eax, [rax]                      ; ExceptionCode
+        cmp     eax, 0xC0000005
+        je      .log
+        cmp     eax, 0xC000001D
+        je      .log
+        cmp     eax, 0xC0000094
+        je      .log
+        cmp     eax, 0xC00000FD
+        je      .log
+        cmp     eax, 0xC0000096
+        je      .log
+        cmp     eax, 0x80000002
+        je      .log
+        xor     eax, eax
+        jmp     .out
+.log:   mov     dword [crash_quiet], 1          ; no dialog from here: the system may swallow the fault
+        call    crash_filter
+        mov     dword [crash_quiet], 0
+        xor     eax, eax                        ; EXCEPTION_CONTINUE_SEARCH
 .out:   EPROC
 
 ; LONG WINAPI crash_filter(EXCEPTION_POINTERS* rcx)
@@ -456,7 +485,9 @@ PROC crash_filter, 8
         mov     r13, rax
         inc     r12d
         jmp     .fr
-.box:   cmp     dword [cli_no_shell], 0
+.box:   cmp     dword [crash_quiet], 0
+        jne     .done
+        cmp     dword [cli_no_shell], 0
         jne     .done                           ; tests: no dialog
         mov     rcx, [hwnd]
         lea     rdx, [w_crash_body]
