@@ -1,0 +1,104 @@
+name: windows
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install NASM
+        shell: pwsh
+        run: |
+          choco install nasm -y --no-progress
+          "C:\Program Files\NASM" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Tool versions
+        shell: pwsh
+        run: |
+          nasm -v
+          lld-link --version
+          llvm-readobj --version | Select-Object -First 2
+          python --version
+
+      - name: Build
+        shell: pwsh
+        run: python tools/build.py
+
+      - name: Playwright (drives the preinstalled Edge for the player page test)
+        shell: pwsh
+        run: |
+          npm install --prefix "$env:RUNNER_TEMP\pw" playwright@1.56.1 --no-audit --no-fund
+          "PLAYWRIGHT_PATH=$env:RUNNER_TEMP\pw\node_modules\playwright" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PW_CHANNEL=msedge" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Pillow and numpy (reference JPEG decoding for the decoder tests)
+        shell: pwsh
+        run: python -m pip install --quiet pillow numpy
+
+      - name: Test (runs the real .exe on Windows)
+        shell: pwsh
+        timeout-minutes: 30
+        run: |
+          python tests/run_tests.py 2>&1 | Tee-Object -FilePath test.log
+          $code = $LASTEXITCODE
+          Write-Host "=== failures ==="
+          Select-String -Path test.log -Pattern '^FAIL' | ForEach-Object { $_.Line.Substring(0, [Math]::Min(1500, $_.Line.Length)) }
+          exit $code
+
+      - name: Stop leftover app processes
+        if: always()
+        shell: pwsh
+        run: Get-Process bytestream -ErrorAction SilentlyContinue | Stop-Process -Force
+
+      - name: Diagnose a failed run (one navigation click and one screenshot, with the app's own log)
+        if: failure()
+        shell: pwsh
+        timeout-minutes: 4
+        run: |
+          foreach ($case in @(@("act", @("--demo", "--dump", "--act", "1,2")), @("shot", @("--demo", "--dump", "--screenshot", "diag-shot.bmp")))) {
+            $d = "$env:RUNNER_TEMP\bs-diag-$($case[0])"
+            Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue
+            $a = $case[1] + @("--data-dir", $d)
+            $p = Start-Process -FilePath build\bytestream.exe -ArgumentList $a -PassThru -NoNewWindow -RedirectStandardOutput "diag-$($case[0]).out"
+            $done = $p.WaitForExit(30000)
+            if (-not $done) { $p.Kill(); Write-Host "[$($case[0])] still running after 30 s, killed" } else { Write-Host "[$($case[0])] exit code $($p.ExitCode)" }
+            Write-Host "[$($case[0])] stdout:"; Get-Content "diag-$($case[0]).out" -ErrorAction SilentlyContinue | Select-Object -First 100
+            Write-Host "[$($case[0])] bytestream.log:"; Get-Content "$d\bytestream.log" -ErrorAction SilentlyContinue | Select-Object -First 80
+          }
+
+      - name: Render screenshots
+        if: always()
+        timeout-minutes: 4
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path shots | Out-Null
+          $exe = "build\bytestream.exe"
+          foreach ($s in @(
+            @("home", "--demo --play --seek 83"),
+            @("library", "--demo --page 2"),
+            @("settings", "--demo --page 4"),
+            @("login", ""),
+            @("fullscreen", "--demo --play --seek 61 --fullscreen"),
+            @("light", "--demo --play --theme 2 --seek 83"))) {
+            $args = @()
+            if ($s[1] -ne "") { $args += $s[1].Split(" ") }
+            $args += @("--data-dir", "$env:RUNNER_TEMP\bs-$($s[0])", "--screenshot", "shots\$($s[0]).bmp")
+            $p = Start-Process -FilePath $exe -ArgumentList $args -PassThru -NoNewWindow
+            if (-not $p.WaitForExit(20000)) { $p.Kill(); Write-Host "screenshot run $($s[0]) did not finish in 20 s and was killed" }
+            python tools/bmp2png.py "shots\$($s[0]).bmp" "shots\$($s[0]).png"
+          }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bytestream-windows
+          path: |
+            build/bytestream.exe
+            build/bytestream.map
+            shots/*.png
+            test.log

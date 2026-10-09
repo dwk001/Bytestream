@@ -1,0 +1,146 @@
+{
+ "total": 9,
+ "next": null,
+ "items": [
+  {
+   "id": "tr0100",
+   "name": "Rooftop Lanterns",
+   "uri": "spotify:track:tr0100",
+   "duration_ms": 221900,
+   "artists": [
+    {
+     "id": "ar233615",
+     "name": "Ivory Delta",
+     "uri": "spotify:artist:IvoryDelta"
+    }
+   ],
+   "type": "track",
+   "track_number": 1
+  },
+  {
+   "id": "tr0101",
+   "name": "Cassette Honey",
+   "uri": "spotify:track:tr0101",
+   "duration_ms": 229819,
+   "artists": [
+    {
+     "id": "ar164475",
+     "name": "The Quiet Engines",
+     "uri": "spotify:artist:TheQuietEngines"
+    }
+   ],
+   "type": "track",
+   "track_number": 2
+  },
+  {
+   "id": "tr0102",
+   "name": "Clockwork Tide",
+   "uri": "spotify:track:tr0102",
+   "duration_ms": 237738,
+   "artists": [
+    {
+     "id": "ar184946",
+     "name": "Low Tide Radio",
+     "uri": "spotify:artist:LowTideRadio"
+    }
+   ],
+   "type": "track",
+   "track_number": 3
+  },
+  {
+   "id": "tr0103",
+   "name": "Static Cassette",
+   "uri": "spotify:track:tr0103",
+   "duration_ms": 245657,
+   "artists": [
+    {
+     "id": "ar636227",
+     "name": "Night Bus Poets",
+     "uri": "spotify:artist:NightBusPoets"
+    }
+   ],
+   "type": "track",
+   "track_number": 4
+  },
+  {
+   "id": "tr0104",
+   "name": "Echo Lanterns",
+   "uri": "spotify:track:tr0104",
+   "duration_ms": 253576,
+   "artists": [
+    {
+     "id": "ar996827",
+     "name": "Kite Season",
+     "uri": "spotify:artist:KiteSeason"
+    }
+   ],
+   "type": "track",
+   "track_number": 5
+  },
+  {
+   "id": "tr0105",
+   "name": "Wildfire Honey",
+   "uri": "spotify:track:tr0105",
+   "duration_ms": 261495,
+   "artists": [
+    {
+     "id": "ar165147",
+     "name": "Moth Choir",
+     "uri": "spotify:artist:MothChoir"
+    },
+    {
+     "id": "ar539596",
+     "name": "Neon Harbor",
+     "uri": "spotify:artist:NeonHarbor"
+    }
+   ],
+   "type": "track",
+   "track_number": 6
+  },
+  {
+   "id": "tr0106",
+   "name": "Signal Tide",
+   "uri": "spotify:track:tr0106",
+   "duration_ms": 269414,
+   "artists": [
+    {
+     "id": "ar631928",
+     "name": "Marlowe & Vane",
+     "uri": "spotify:artist:Marlowe&Vane"
+    }
+   ],
+   "type": "track",
+   "track_number": 7
+  },
+  {
+   "id": "tr0107",
+   "name": "Satellite Cassette",
+   "uri": "spotify:track:tr0107",
+   "duration_ms": 157333,
+   "artists": [
+    {
+     "id": "ar561478",
+     "name": "Paper Satellites",
+     "uri": "spotify:artist:PaperSatellites"
+    }
+   ],
+   "type": "track",
+   "track_number": 8
+  },
+  {
+   "id": "tr0108",
+   "name": "Tide Lanterns",
+   "uri": "spotify:track:tr0108",
+   "duration_ms": 165252,
+   "artists": [
+    {
+     "id": "ar539596",
+     "name": "Neon Harbor",
+     "uri": "spotify:artist:NeonHarbor"
+    }
+   ],
+   "type": "track",
+   "track_number": 9
+  }
+ ]
+}
