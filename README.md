@@ -13,7 +13,7 @@ open in Spotify ...), playlist create / rename / delete, add and remove tracks, 
 > Everything is controlled from the window. There is no config file to edit and no command line to learn.
 
 Cover art is decoded by ByteStream's own PNG and JPEG decoders (DEFLATE, Huffman, integer IDCT - all assembly, on the
-download threads, a 640 px cover in about 7 ms); only formats it does not know (progressive JPEG, GIF ...) are passed to
+download threads, a 640 px cover in about 7 ms, pixel-identical to libjpeg's output); only formats it does not know (progressive JPEG, GIF ...) are passed to
 Windows' GDI+. Everything on screen is drawn and handled by ByteStream itself, including the text boxes (caret, selection with the mouse
 or Shift+arrows, Ctrl+arrows by word, copy / cut / paste, Tab between boxes) and the animations (hover fades, smooth wheel
 scrolling, the queue panel and the full-screen view sliding). Nothing animates while nothing moves: an idle window draws

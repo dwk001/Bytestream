@@ -4,8 +4,9 @@
 ;
 ; Handles 8-bit Huffman JPEGs with 1 (grey) or 3 (YCbCr / RGB) components, any sampling factors, restart intervals,
 ; interleaved and non-interleaved scans.  Progressive, arithmetic-coded, lossless, 12-bit and 4-component files return
-; 0 and are left to GDI+.  The IDCT is the accurate integer one of the Independent JPEG Group (jidctint), so pixels match
-; libjpeg except for the cheaper (replicating) chroma upsampling.
+; 0 and are left to GDI+.  The IDCT is the accurate integer one of the Independent JPEG Group (jidctint), the colour
+; conversion rounds like libjpeg's and 4:2:2 / 4:2:0 chroma is interpolated with libjpeg's "fancy" triangle filters, so the
+; output is bit for bit what libjpeg produces (tests compare against it); other sampling ratios are replicated.
 
 %define JS_SRC      0
 %define JS_END      8
@@ -677,6 +678,220 @@ jp_restart:
         jb      .p
         ret
 
+; ---------------------------------------------------------------- chroma upsampling (libjpeg's "fancy" triangle filters)
+; One row, 2:1 horizontally.  rsi = input row, edx = input width (more than 2), rdi = output row (2 * width).
+jp_row_h2v1:
+        movzx   eax, byte [rsi]
+        mov     [rdi], al
+        movzx   ecx, byte [rsi+1]
+        lea     r9d, [rax+rax*2]
+        add     r9d, ecx
+        add     r9d, 2
+        shr     r9d, 2
+        mov     [rdi+1], r9b
+        add     rdi, 2
+        mov     r11d, 1
+.l:     lea     r10d, [r11+1]
+        cmp     r10d, edx
+        jae     .last
+        movzx   eax, byte [rsi+r11]
+        lea     eax, [rax+rax*2]
+        movzx   ecx, byte [rsi+r11-1]
+        lea     r9d, [rax+rcx+1]
+        shr     r9d, 2
+        mov     [rdi], r9b
+        movzx   ecx, byte [rsi+r11+1]
+        lea     r9d, [rax+rcx+2]
+        shr     r9d, 2
+        mov     [rdi+1], r9b
+        add     rdi, 2
+        inc     r11d
+        jmp     .l
+.last:  movzx   eax, byte [rsi+r11]
+        lea     ecx, [rax+rax*2]
+        movzx   r9d, byte [rsi+r11-1]
+        lea     ecx, [rcx+r9+1]
+        shr     ecx, 2
+        mov     [rdi], cl
+        mov     [rdi+1], al
+        ret
+
+; One output row of a 2:1 x 2:1 upsampling.  rsi = the nearest input row, r8 = the next nearest one (above or below),
+; edx = input width (more than 2), rdi = output row.
+jp_row_h2v2:
+        movzx   eax, byte [rsi]
+        lea     eax, [rax+rax*2]
+        movzx   ecx, byte [r8]
+        add     eax, ecx                        ; this column's sum: 3 * near + far
+        movzx   r9d, byte [rsi+1]
+        lea     r9d, [r9+r9*2]
+        movzx   ecx, byte [r8+1]
+        add     r9d, ecx                        ; next column's
+        lea     ecx, [rax*4+8]
+        shr     ecx, 4
+        mov     [rdi], cl
+        lea     ecx, [rax+rax*2]
+        add     ecx, r9d
+        add     ecx, 7
+        shr     ecx, 4
+        mov     [rdi+1], cl
+        mov     r10d, eax                       ; last
+        mov     eax, r9d                        ; this
+        mov     r11d, 2
+        add     rdi, 2
+.l:     cmp     r11d, edx
+        jae     .last
+        movzx   r9d, byte [rsi+r11]
+        lea     r9d, [r9+r9*2]
+        movzx   ecx, byte [r8+r11]
+        add     r9d, ecx                        ; next
+        lea     ecx, [rax+rax*2]
+        add     ecx, r10d
+        add     ecx, 8
+        shr     ecx, 4
+        mov     [rdi], cl
+        lea     ecx, [rax+rax*2]
+        add     ecx, r9d
+        add     ecx, 7
+        shr     ecx, 4
+        mov     [rdi+1], cl
+        mov     r10d, eax
+        mov     eax, r9d
+        add     rdi, 2
+        inc     r11d
+        jmp     .l
+.last:  lea     ecx, [rax+rax*2]
+        add     ecx, r10d
+        add     ecx, 8
+        shr     ecx, 4
+        mov     [rdi], cl
+        lea     ecx, [rax*4+7]
+        shr     ecx, 4
+        mov     [rdi+1], cl
+        ret
+
+; Components sampled at half the horizontal rate (and full or half the vertical rate) are interpolated to full size, as
+; libjpeg does; other ratios are replicated by jp_convert.  rbx = state.
+PROC jp_upsample, 12
+        xor     r12d, r12d
+.comp:  cmp     r12d, [rbx+JS_NCOMP]
+        jae     .out
+        mov     eax, r12d
+        shl     eax, 6
+        lea     r13, [rbx+JS_COMP+rax]
+        mov     eax, [r13+JC_H]
+        add     eax, eax
+        cmp     eax, [rbx+JS_HMAX]
+        jne     .next                           ; only 2:1 horizontally
+        mov     eax, [r13+JC_V]
+        mov     r14d, 1                         ; vertical factor 1 or 2
+        cmp     eax, [rbx+JS_VMAX]
+        je      .vok
+        add     eax, eax
+        cmp     eax, [rbx+JS_VMAX]
+        jne     .next
+        mov     r14d, 2
+.vok:   mov     eax, [rbx+JS_W]                 ; input size: ceil(W * h / hmax) x ceil(H * v / vmax)
+        imul    eax, [r13+JC_H]
+        add     eax, [rbx+JS_HMAX]
+        dec     eax
+        xor     edx, edx
+        div     dword [rbx+JS_HMAX]
+        mov     r15d, eax                       ; width
+        cmp     r15d, 2
+        jbe     .next                           ; libjpeg replicates such narrow ones
+        mov     eax, [rbx+JS_H]
+        imul    eax, [r13+JC_V]
+        add     eax, [rbx+JS_VMAX]
+        dec     eax
+        xor     edx, edx
+        div     dword [rbx+JS_VMAX]
+        mov     loc(0), rax                     ; height
+        mov     eax, [rbx+JS_MCUX]
+        imul    eax, [rbx+JS_HMAX]
+        shl     eax, 3
+        mov     loc(1), rax                     ; new stride
+        mov     ecx, [rbx+JS_MCUY]
+        imul    ecx, [rbx+JS_VMAX]
+        shl     ecx, 3
+        imul    rax, rcx
+        lea     rcx, [rax+16]
+        call    mem_alloc
+        mov     loc(2), rax                     ; new plane
+        xor     esi, esi                        ; input row
+.rows:  cmp     esi, dword loc(0)
+        jae     .done
+        mov     eax, esi
+        imul    eax, [r13+JC_STRIDE]
+        mov     r9, [r13+JC_PLANE]
+        lea     r10, [r9+rax]                   ; this input row
+        cmp     r14d, 2
+        je      .v2
+        mov     rax, rsi
+        imul    rax, loc(1)
+        mov     rdi, loc(2)
+        add     rdi, rax
+        push    rsi
+        mov     rsi, r10
+        mov     edx, r15d
+        call    jp_row_h2v1
+        pop     rsi
+        jmp     .rn
+.v2:    mov     eax, esi                        ; row above (clamped at the top) -> r8
+        test    eax, eax
+        jz      .a1
+        dec     eax
+.a1:    imul    eax, [r13+JC_STRIDE]
+        lea     r8, [r9+rax]
+        mov     rax, rsi
+        add     rax, rax
+        imul    rax, loc(1)
+        mov     rdi, loc(2)
+        add     rdi, rax
+        push    rsi
+        mov     rsi, r10
+        mov     edx, r15d
+        call    jp_row_h2v2                     ; output row 2 * r
+        pop     rsi
+        lea     eax, [rsi+1]                    ; row below (clamped at the bottom)
+        mov     ecx, dword loc(0)
+        dec     ecx
+        cmp     eax, ecx
+        jbe     .b1
+        mov     eax, ecx
+.b1:    imul    eax, [r13+JC_STRIDE]
+        mov     r9, [r13+JC_PLANE]
+        lea     r8, [r9+rax]
+        mov     rax, rsi
+        add     rax, rax
+        inc     rax
+        imul    rax, loc(1)
+        mov     rdi, loc(2)
+        add     rdi, rax
+        mov     eax, esi
+        imul    eax, [r13+JC_STRIDE]
+        lea     r10, [r9+rax]
+        push    rsi
+        mov     rsi, r10
+        mov     edx, r15d
+        call    jp_row_h2v2                     ; output row 2 * r + 1
+        pop     rsi
+.rn:    inc     esi
+        jmp     .rows
+.done:  mov     rcx, [r13+JC_PLANE]
+        call    mem_free
+        mov     rax, loc(2)
+        mov     [r13+JC_PLANE], rax
+        mov     eax, dword loc(1)
+        mov     [r13+JC_STRIDE], eax
+        mov     eax, [rbx+JS_HMAX]
+        mov     [r13+JC_H], eax
+        mov     eax, [rbx+JS_VMAX]
+        mov     [r13+JC_V], eax
+.next:  inc     r12d
+        jmp     .comp
+.out:   EPROC
+
 ; ---------------------------------------------------------------- colour conversion
 %macro CLAMP8 1                         ; %1 = 0 .. 255 (negative -> 0, above -> 255)
         cmp     %1, 255
@@ -797,12 +1012,12 @@ PROC jp_convert, 8
         sar     r10d, 16
         add     r10d, eax
         CLAMP8  r10d
-        imul    edx, edx, 22554                 ; G = Y - 0.344 Cb - 0.714 Cr
-        imul    r8d, r8d, 46802
+        imul    edx, edx, -22554                ; G = Y - 0.344 Cb - 0.714 Cr (rounded the way libjpeg does)
+        imul    r8d, r8d, -46802
         add     edx, r8d
         add     edx, 32768
         sar     edx, 16
-        sub     eax, edx
+        add     eax, edx
         CLAMP8  eax
         shl     r9d, 16
         shl     eax, 8
@@ -1176,6 +1391,7 @@ PROC jpeg_decode, 8
         jmp     .marker
 .eof:   cmp     dword [rbx+JS_SCANS], 0
         je      .fail
+        call    jp_upsample
         call    jp_convert
         mov     loc(5), rax
         jmp     .free
