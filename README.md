@@ -19,6 +19,16 @@ or Shift+arrows, Ctrl+arrows by word, copy / cut / paste, Tab between boxes) and
 scrolling, the queue panel and the full-screen view sliding). Nothing animates while nothing moves: an idle window draws
 nothing and uses no CPU.
 
+## What is assembly, and what is Windows
+
+Everything in `src/` (about 24,000 lines) is hand-written NASM. The program itself does: JSON parsing, the HTTP client's
+request logic, OAuth with PKCE, the local web server, the list / track / card models, layout and hit-testing, every widget
+(buttons, rows, cards, menus, dialogs, the text boxes), animation, the cover cache, and the **PNG and JPEG decoders**.
+It asks Windows for: opening a window and getting input (user32), shape / text rasterisation and bitmap scaling (GDI+),
+TLS and HTTP transport (WinHTTP), sockets (Winsock), random numbers, SHA-256 and token encryption (bcrypt, DPAPI),
+and the clipboard. The one non-assembly file that ships is `web/player.js` (about 100 lines): Spotify's playback SDK is
+JavaScript and needs a browser with DRM, so a hidden Edge window hosts it and talks to ByteStream over local HTTP.
+
 ## Setting it up (once)
 
 1. **Premium.** Spotify only lets third-party players stream with a Premium account.
