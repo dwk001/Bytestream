@@ -109,6 +109,8 @@ def pixel(path, x, y):
     w, h = struct.unpack_from("<ii", d, 18)
     top_down = h < 0
     h = abs(h)
+    x = min(x, w - 1)          # a smaller-than-requested window must not crash the sampler
+    y = min(y, h - 1)
     row = y if top_down else h - 1 - y
     b, g, r, _ = d[off + (row * w + x) * 4: off + (row * w + x) * 4 + 4]
     return r, g, b

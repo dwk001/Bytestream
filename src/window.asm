@@ -665,6 +665,13 @@ PROC wndproc, 12
         S       560
         mov     rcx, loc(3)
         mov     [rcx+28], eax
+        ; Windows clamps a window to the screen by default; lift that so --size is honoured on small desktops
+        ; (CI machines are 1024x768) and the layout can be tested at any size.
+        mov     rcx, loc(3)
+        mov     dword [rcx+8], 8192             ; ptMaxSize
+        mov     dword [rcx+12], 8192
+        mov     dword [rcx+32], 8192            ; ptMaxTrackSize
+        mov     dword [rcx+36], 8192
         jmp     .zero
 
 .dpi:   mov     rax, loc(2)
