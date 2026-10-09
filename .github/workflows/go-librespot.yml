@@ -21,6 +21,8 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
+      - uses: actions/checkout@v4          # this repository (the smoke test reads ByteStream's own helper flags from src/engine.asm)
+
       - uses: actions/cache@v4
         id: cache
         with:
@@ -88,34 +90,31 @@ jobs:
           echo "$GO_LIBRESPOT_REF" > dist/go-librespot-VERSION.txt
           ls -l dist
 
-      - name: What does the daemon accept? (flags, and its API with no account signed in)
+      - name: Smoke test - the real daemon, started with exactly the flags ByteStream passes
         run: |
           export PATH="/mingw64/bin:$PATH"
-          cd dist
           echo "=== --help ==="
-          ./go-librespot.exe --help 2>&1 | head -60 || true
-          echo "=== run for 12 s with the local API on and device-code login ==="
-          mkdir -p ../cfg
-          cat > ../cfg/config.yml <<'EOF'
-          device_name: "ByteStream"
-          audio_backend: wasapi
-          log_level: debug
-          credentials:
-            type: device_auth
-          server:
-            enabled: true
-            address: 127.0.0.1
-            port: 36999
-          EOF
-          ./go-librespot.exe --config_dir ../cfg > ../daemon.log 2>&1 &
+          ./dist/go-librespot.exe --help 2>&1 | head -40 || true
+          # hp_flags in src/engine.asm is the command line ByteStream builds: -c overrides, the port and the volume are appended
+          flags=$(sed -n 's/^ZSTR hp_flags, `"\(.*\)`$/\1/p' src/engine.asm)
+          test -n "$flags" || { echo "could not read hp_flags from src/engine.asm"; exit 1; }
+          mkdir -p cfg
+          args="${flags}36999"
+          echo "=== run for 12 s: go-librespot.exe --config_dir cfg $args -c initial_volume=70 ==="
+          ./dist/go-librespot.exe --config_dir cfg $args -c initial_volume=70 > daemon.log 2>&1 &
           pid=$!
           sleep 12
+          alive=yes; kill -0 $pid 2>/dev/null || alive=no
           for p in "" status auth/code player/volume; do
             echo "--- GET /$p"; curl -s -i -m 5 "http://127.0.0.1:36999/$p" | head -20; echo
           done
+          code=$(curl -s -o /dev/null -w '%{http_code}' -m 5 http://127.0.0.1:36999/auth/code)
           kill $pid 2>/dev/null || true
-          echo "=== daemon log ==="; head -80 ../daemon.log
-          echo "=== files it wrote ==="; ls -la ../cfg
+          echo "=== daemon log ==="; head -60 daemon.log | sed 's/AAE[A-Za-z0-9+\/=]\{40,\}/<client token>/'
+          echo "=== files it wrote ==="; ls -la cfg
+          [ "$alive" = yes ] || { echo "FAIL: the daemon exited by itself (a flag it did not accept?)"; exit 1; }
+          [ "$code" = 200 ] || { echo "FAIL: GET /auth/code answered $code, expected 200 (pairing code)"; exit 1; }
+          echo "smoke test passed"
 
       - uses: actions/upload-artifact@v4
         with:

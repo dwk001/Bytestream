@@ -1,0 +1,20 @@
+ByteStream - third-party software that ships next to bytestream.exe
+====================================================================
+
+go-librespot (go-librespot.exe)
+  An open-source Spotify Connect player.  ByteStream starts it as a separate program and talks to it over a local
+  HTTP API on 127.0.0.1; it is not linked into bytestream.exe.
+  Licence:  GNU General Public License v3.0 (go-librespot-LICENSE.txt)
+  Version:  see go-librespot-VERSION.txt (built unmodified from the upstream tag by .github/workflows/go-librespot.yml)
+  Source:   https://github.com/devgianlu/go-librespot  (the tag named in go-librespot-VERSION.txt)
+
+  It reaches Spotify through Spotify's own client protocol rather than a published API.  Spotify's terms do not
+  permit that for third-party programs; ByteStream's Settings > Playback engine lets you choose Microsoft Edge
+  (Spotify's official Web Playback SDK) instead.  Use it at your own risk, for your own Premium account.
+
+MinGW-w64 runtime libraries shipped as DLLs next to it (built by MSYS2)
+  libogg-0.dll, libvorbis-0.dll, libvorbisenc-2.dll   BSD-3-Clause  (Xiph.Org Foundation)
+  libFLAC.dll                                         BSD-3-Clause  (Xiph.Org Foundation)
+  libmpg123-0.dll                                     LGPL-2.1      (https://mpg123.de)
+  libwinpthread-1.dll                                 MIT / BSD-style (MinGW-w64 project)
+  Their sources are available from the MSYS2 package repository (https://packages.msys2.org).

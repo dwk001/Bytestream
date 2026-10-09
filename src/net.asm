@@ -10,7 +10,7 @@ extern CreateThread, CreateEventW, SetEvent, WaitForSingleObject, Sleep, PostMes
 extern PeekMessageW, GetTickCount64
 
 %define JB_NEXT    0
-%define JB_KIND    8                    ; queue index: 0 api, 1..3 images (three download workers)
+%define JB_KIND    8                    ; queue index: 0 api, 1..3 images (three download workers), 4 audio helper
 %define JB_TAG     16
 %define JB_ARG     24
 %define JB_METHOD  32                   ; static UTF-16 verb
@@ -46,8 +46,12 @@ extern PeekMessageW, GetTickCount64
 %define TAG_QUEUE  11                   ; GET /me/player/queue answered
 %define TAG_QADD   12                   ; POST /me/player/queue answered
 %define TAG_PLMOD  13                   ; a playlist change answered (arg = block [gen][kind][id])
-%define TAG_COUNT  14                   ; grows as handlers are added
-%define NQ_COUNT   4
+%define TAG_HPSTAT 14                   ; the audio helper answered GET /status (engine.asm)
+%define TAG_HPAUTH 15                   ; the audio helper answered GET /auth/code
+%define TAG_COUNT  16                   ; grows as handlers are added
+%define NQ_COUNT   5                    ; 0 api, 1..3 covers, 4 the local audio helper
+%define NQ_IMAGES  3
+%define NQ_LOCAL   4                    ; own thread: a slow Spotify call (429 back-off) never delays pause or seek
 
 section .bss
 nq_head:        resq NQ_COUNT
@@ -89,6 +93,8 @@ net_handlers:
         dq h_queue
         dq h_qadd
         dq h_plmod
+        dq h_hpstat
+        dq h_hpauth
 
 section .text
 

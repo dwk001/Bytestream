@@ -1,12 +1,17 @@
 name: release
 
-# Push a tag like v0.1.0 to build bytestream.exe on Windows and attach it, with its linker map, to a GitHub release.
+# Push a tag like v0.1.0 to build bytestream.exe on Windows and attach it, with the go-librespot audio helper and its
+# linker map, to a GitHub release.
 on:
   push:
     tags: ["v*"]
 
 jobs:
+  librespot:
+    uses: ./.github/workflows/go-librespot.yml
+
   release:
+    needs: librespot
     runs-on: windows-latest
     permissions:
       contents: write
@@ -23,13 +28,21 @@ jobs:
         shell: pwsh
         run: python tools/build.py
 
+      - name: Audio helper (go-librespot, GPL-3.0) with its DLLs and licence
+        uses: actions/download-artifact@v4
+        with:
+          name: go-librespot-windows
+          path: helper
+
       - name: Package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item build\bytestream.exe dist\ByteStream.exe
           Copy-Item build\bytestream.map dist\ByteStream.map
+          Copy-Item helper\* dist\
           Copy-Item README.md dist\README.md
+          Copy-Item THIRD-PARTY.txt dist\THIRD-PARTY.txt
           Compress-Archive -Path dist\* -DestinationPath ByteStream-${{ github.ref_name }}-windows-x64.zip
 
       - uses: softprops/action-gh-release@v2

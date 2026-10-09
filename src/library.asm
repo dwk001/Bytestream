@@ -621,7 +621,7 @@ PROC fetch_image_async, 2
         mov     eax, [img_rr]
         inc     dword [img_rr]
         xor     edx, edx
-        mov     ecx, NQ_COUNT-1
+        mov     ecx, NQ_IMAGES
         div     ecx
         lea     ecx, [rdx+1]                    ; queue 1..3
         mov     edx, TAG_IMG
