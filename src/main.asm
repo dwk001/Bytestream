@@ -37,7 +37,7 @@ text_begin:
 %include "stubs.asm"
 %include "selftest.asm"
 
-extern GetCommandLineW, CommandLineToArgvW, lstrcmpW, GetDpiForSystem, SetWindowTextW
+extern GetCommandLineW, CommandLineToArgvW, lstrcmpW, GetDpiForSystem, SetWindowTextW, IsWindowVisible
 
 section .bss
 cli_selftest:   resd 1
@@ -176,6 +176,12 @@ ZSTR d_q0, "queue_first="
 ZSTR d_saved, "saved_count="
 ZSTR d_notsaved, "not_saved_count="
 ZSTR d_asked, "asked_count="
+ZSTR d_pcalls, "paint_msgs="
+ZSTR d_scalls, "size_msgs="
+ZSTR d_bbw, "backbuf_w="
+ZSTR d_bbh, "backbuf_h="
+ZSTR d_bbg, "backbuf_ok="
+ZSTR d_vis, "window_visible="
 ZSTR d_pfull, "paints_full="
 ZSTR d_pbar, "paints_bar="
 ZSTR d_hits, "hits="
@@ -1028,6 +1034,19 @@ PROC dump_state, 4
         DUMPNUM d_dlgpub, dword [dlg_public]
         DUMPNUM d_menu, dword [menu_open]
         DUMPNUM d_menun, dword [menu_n]
+        DUMPNUM d_pcalls, dword [paint_calls]
+        DUMPNUM d_scalls, dword [size_calls]
+        DUMPNUM d_bbw, dword [bb_w]
+        DUMPNUM d_bbh, dword [bb_h]
+        xor     eax, eax
+        cmp     qword [bb_g], 0
+        setne   al
+        mov     [dump_tmp], eax
+        DUMPNUM d_bbg, dword [dump_tmp]
+        mov     rcx, [hwnd]
+        call    IsWindowVisible
+        mov     [dump_tmp], eax
+        DUMPNUM d_vis, dword [dump_tmp]
         DUMPNUM d_pfull, dword [paints_full]
         DUMPNUM d_pbar, dword [paints_bar]
         DUMPNUM d_hits, dword [hit_n]

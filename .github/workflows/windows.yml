@@ -63,13 +63,13 @@ jobs:
             $p = Start-Process -FilePath build\bytestream.exe -ArgumentList $a -PassThru -NoNewWindow -RedirectStandardOutput "diag-$($case[0]).out"
             $done = $p.WaitForExit(30000)
             if (-not $done) { $p.Kill(); Write-Host "[$($case[0])] still running after 30 s, killed" } else { Write-Host "[$($case[0])] exit code $($p.ExitCode)" }
-            Write-Host "[$($case[0])] stdout:"; Get-Content "diag-$($case[0]).out" -ErrorAction SilentlyContinue | Select-Object -First 60
+            Write-Host "[$($case[0])] stdout:"; Get-Content "diag-$($case[0]).out" -ErrorAction SilentlyContinue | Select-Object -First 100
             Write-Host "[$($case[0])] bytestream.log:"; Get-Content "$d\bytestream.log" -ErrorAction SilentlyContinue | Select-Object -First 80
           }
 
       - name: Render screenshots
         if: always()
-        timeout-minutes: 8
+        timeout-minutes: 4
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path shots | Out-Null
@@ -85,7 +85,7 @@ jobs:
             if ($s[1] -ne "") { $args += $s[1].Split(" ") }
             $args += @("--data-dir", "$env:RUNNER_TEMP\bs-$($s[0])", "--screenshot", "shots\$($s[0]).bmp")
             $p = Start-Process -FilePath $exe -ArgumentList $args -PassThru -NoNewWindow
-            if (-not $p.WaitForExit(60000)) { $p.Kill(); Write-Host "screenshot run $($s[0]) hung and was killed" }
+            if (-not $p.WaitForExit(20000)) { $p.Kill(); Write-Host "screenshot run $($s[0]) did not finish in 20 s and was killed" }
             python tools/bmp2png.py "shots\$($s[0]).bmp" "shots\$($s[0]).png"
           }
 

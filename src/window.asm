@@ -45,6 +45,8 @@ bar_hit_n:      resd 1                  ; length of the hit list just before the
 bar_rect:       resd 4
 paints_full:    resd 1                  ; counters shown by --dump
 paints_bar:     resd 1
+paint_calls:    resd 1                  ; WM_PAINT messages received / WM_SIZE with a usable size (--dump)
+size_calls:     resd 1
 rc_buf:         resb 16
 tme_buf:        resb 24
 bmi_buf:        resb 48
@@ -491,7 +493,8 @@ PROC wndproc, 12
 .zero:  xor     eax, eax
         jmp     .out
 
-.paint: mov     rcx, loc(0)
+.paint: inc     dword [paint_calls]
+        mov     rcx, loc(0)
         lea     rdx, [ps_buf]
         call    BeginPaint
         mov     loc(4), rax                     ; hdc
@@ -787,6 +790,7 @@ PROC wndproc, 12
         jz      .zero
         test    edx, edx
         jz      .zero
+        inc     dword [size_calls]
         call    bb_create
         mov     dword [edit_vis], 0
         mov     dword [edit_vis+4], 0

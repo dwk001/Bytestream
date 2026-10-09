@@ -18,7 +18,7 @@ IMPORTS = {
         ExpandEnvironmentStringsW CreateProcessW""",
     "user32": """RegisterClassExW CreateWindowExW DefWindowProcW ShowWindow UpdateWindow GetMessageW TranslateMessage
         DispatchMessageW PostQuitMessage PostMessageW PostThreadMessageW SendMessageW BeginPaint EndPaint InvalidateRect
-        GetClientRect GetWindowRect LoadCursorW SetCursor GetDC ReleaseDC SetTimer KillTimer MoveWindow DestroyWindow
+        GetClientRect GetWindowRect IsWindowVisible LoadCursorW SetCursor GetDC ReleaseDC SetTimer KillTimer MoveWindow DestroyWindow
         SetWindowTextW GetWindowTextW SetFocus GetFocus GetKeyState AdjustWindowRectEx TrackMouseEvent SetProcessDPIAware
         GetDpiForWindow GetDpiForSystem GetSystemMetrics ScreenToClient ClientToScreen SetCapture ReleaseCapture MessageBoxW
         PeekMessageW FindWindowW SetForegroundWindow OpenClipboard EmptyClipboard SetClipboardData CloseClipboard GetWindowLongPtrW SetWindowLongPtrW IsWindow SetWindowPos EnableWindow CallWindowProcW""",
