@@ -52,7 +52,8 @@ def main():
 
     obj = os.path.join(BUILD, "main.obj")
     build_id = os.environ.get("BUILD_ID") or git_id()
-    run([nasm, "-fwin64", "-Isrc/", '-DBUILD_ID="%s"' % build_id, "src/main.asm", "-o", obj])
+    extra = os.environ.get("BS_NASM_DEFS", "").split()      # e.g. -DPAD_TEXT=3 (layout experiments in CI)
+    run([nasm, "-fwin64", "-Isrc/", '-DBUILD_ID="%s"' % build_id] + extra + ["src/main.asm", "-o", obj])
 
     # [symbol+register] addressing assembles to a 32-bit absolute address, which faults at a 64-bit image base.
     rel = subprocess.run([readobj, "--relocations", obj], capture_output=True, text=True, cwd=ROOT).stdout

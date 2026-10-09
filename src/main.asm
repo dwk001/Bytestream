@@ -4,6 +4,9 @@
 ; All code lives in one .text; text_begin / text_end bound it for the unwind table at the end of this file.
 section .text
 text_begin:
+%ifdef PAD_TEXT
+        times PAD_TEXT nop              ; CI layout experiments only (tools/build.py honours BS_NASM_DEFS)
+%endif
 
 %include "core.asm"
 %include "json.asm"
@@ -40,6 +43,9 @@ text_begin:
 extern GetCommandLineW, CommandLineToArgvW, lstrcmpW, GetDpiForSystem, SetWindowTextW, IsWindowVisible
 
 section .bss
+%ifdef PAD_BSS
+                resb PAD_BSS
+%endif
 cli_selftest:   resd 1
 cli_demo:       resd 1
 cli_page:       resd 1                  ; -1 = default
@@ -87,6 +93,9 @@ cli_hold:       resd 1                  ; --hold: with --dump, keep running unti
 dump_tmp:       resd 1
 
 section .data
+%ifdef PAD_DATA
+                times PAD_DATA db 0
+%endif
 WSTR a_selftest, "--selftest"
 WSTR a_demo, "--demo"
 WSTR a_shot, "--screenshot"
