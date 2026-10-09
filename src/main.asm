@@ -53,6 +53,8 @@ cli_nget:       resd 1
 cli_get:        resq 8                  ; --net-get paths (UTF-16)
 cli_type_client: resq 1
 cli_type_port:  resq 1
+cli_banner:     resq 1
+cli_banner_btn: resq 1
 cli_http_meth:  resq 1
 cli_http_body:  resq 1
 cli_nact:       resd 1
@@ -87,6 +89,8 @@ WSTR a_nobrowser, "--no-browser"
 WSTR a_netget, "--net-get"
 WSTR a_tclient, "--type-client"
 WSTR a_tport, "--type-port"
+WSTR a_banner, "--banner"
+WSTR a_bbtn, "--banner-button"
 WSTR a_hmeth, "--http-method"
 WSTR a_hbody, "--http-body"
 WSTR w_get, "GET"
@@ -457,6 +461,22 @@ PROC parse_cli, 4
         inc     qword loc(2)
         jmp     .next
 .b20:   mov     rcx, rbx
+        lea     rdx, [a_banner]
+        call    arg_is
+        test    eax, eax
+        jz      .b21
+        mov     [cli_banner], rsi
+        inc     qword loc(2)
+        jmp     .next
+.b21:   mov     rcx, rbx
+        lea     rdx, [a_bbtn]
+        call    arg_is
+        test    eax, eax
+        jz      .b22
+        mov     [cli_banner_btn], rsi
+        inc     qword loc(2)
+        jmp     .next
+.b22:   mov     rcx, rbx
         lea     rdx, [a_act]
         call    arg_is
         test    eax, eax
@@ -894,6 +914,13 @@ PROC start, 8
         mov     rcx, [hwnd]
         call    UpdateWindow
         call    run_scripted_input
+        mov     rcx, [cli_banner]
+        test    rcx, rcx
+        jz      .nobanner
+        mov     rdx, [cli_banner_btn]
+        mov     r8d, BA_SETTINGS
+        call    ui_banner
+.nobanner:
         call    run_acts
         mov     ecx, 15000
         call    net_wait_idle

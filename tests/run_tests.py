@@ -6,15 +6,20 @@ Runs the Windows binary (under Wine + Xvfb on Linux, natively on Windows) and ch
   * scripted UI flows: `--act ID,ARG` activates a hit target that must really exist on screen,
     `--dump` prints the resulting state, `--screenshot` saves the rendered frame.
 """
-import os, shutil, struct, subprocess, sys, tempfile
+import os, shutil, struct, subprocess, sys, tempfile, threading, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXE = os.path.join(ROOT, "build", "bytestream.exe")
 ON_WINDOWS = os.name == "nt"
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fake_spotify  # noqa: E402
+
 # hit ids (ui_core.asm)
 H_NAV, H_SIDE_PL, H_CARD, H_TRACK, H_PLAY, H_PREV, H_NEXT, H_SHUFFLE, H_REPEAT = 1, 2, 3, 4, 5, 6, 7, 8, 9
 H_QUEUE, H_FULL, H_TAB, H_THEME, H_BACK, H_FS_CLOSE, H_DETAIL_PLAY = 12, 13, 14, 17, 19, 20, 21
+H_SIGNIN, H_DEMO = 16, 24
+H_COPY_URI, H_OPEN_DASH, H_BANNER_X = 28, 29, 30
 SRC_RECENT, SRC_LIKED, SRC_PLAYLISTS, SRC_ALBUMS = 1, 2, 5, 6
 PAGE_HOME, PAGE_SEARCH, PAGE_LIBRARY, PAGE_DETAIL, PAGE_SETTINGS, PAGE_LOGIN = range(6)
 
@@ -34,15 +39,31 @@ def ensure_display():
     os.execvp("xvfb-run", ["xvfb-run", "-a", "-s", "-screen 0 1920x1080x24", sys.executable] + sys.argv)
 
 
-def run(args, shot=False, timeout=180):
+def start_fake_server():
+    srv = fake_spotify.ThreadingHTTPServer(("127.0.0.1", 0), fake_spotify.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv.server_address[1]
+
+
+def win_path(p):
+    return p if ON_WINDOWS else "Z:" + p
+
+
+def run(args, shot=False, timeout=180, data_dir=None):
     env = dict(os.environ, WINEDEBUG="-all")
     env.setdefault("WINEPREFIX", "/tmp/wineprefix")
     path = None
+    own_dir = None
+    if "--data-dir" not in args and "--selftest" not in args and "--http-test" not in args:
+        own_dir = data_dir or tempfile.mkdtemp(prefix="bs-data-")
+        args = args + ["--data-dir", win_path(own_dir)]
     argv = cmd_prefix() + [EXE] + args
     if shot:
         path = tempfile.mktemp(suffix=".bmp")
         argv += ["--screenshot", path]
     p = subprocess.run(argv, capture_output=True, text=True, env=env, timeout=timeout)
+    if own_dir and not data_dir:
+        shutil.rmtree(own_dir, ignore_errors=True)
     state = {}
     for line in p.stdout.splitlines():
         if "=" in line:
@@ -66,11 +87,18 @@ failed = []
 passed = 0
 
 
+_last = [time.time()]
+
+
 def check(cond, name, extra=""):
     global passed
+    now = time.time()
+    took = now - _last[0]
+    _last[0] = now
+    slow = f"  ({took:.1f}s)" if took >= 3 else ""
     if cond:
         passed += 1
-        print("ok   " + name)
+        print("ok   " + name + slow)
     else:
         failed.append(name)
         print("FAIL " + name + ((" -- " + extra) if extra else ""))
@@ -80,8 +108,8 @@ def arg(src, idx):
     return (src << 16) | idx
 
 
-def flow(name, args, expect, shot=False, extra_check=None):
-    rc, out, st, path = run(["--demo", "--dump"] + args, shot=shot)
+def flow(name, args, expect, shot=False, extra_check=None, demo=True):
+    rc, out, st, path = run((["--demo"] if demo else []) + ["--dump"] + args, shot=shot)
     ok = rc == 0
     bad = []
     for k, v in expect.items():
@@ -180,6 +208,61 @@ def main():
         return True if w == 1500 else f"width {w}"
     flow("scale override renders at the requested size", ["--scale", "150", "--size", "1000x600"], {"page": PAGE_HOME},
          shot=True, extra_check=high_dpi)
+
+
+    # ---- milestone 1: HTTP client, job queue, settings, setup controls
+    port = start_fake_server()
+    base = f"http://127.0.0.1:{port}"
+    log = fake_spotify.STATE.log
+
+    rc, out, _, _ = run(["--http-test", f"{base}/echo", "--http-method", "POST", "--http-body", '{"a":1}'])
+    check(rc == 0 and "status=200" in out and '"body": "{\\"a\\":1}"' in out, "http: POST body reaches the server")
+    check('"Authorization": "Bearer probe-token"' in out and '"Content-Type": "application/json"' in out,
+          "http: each header arrives as its own header")
+    rc, out, _, _ = run(["--http-test", "http://127.0.0.1:1/echo"])
+    check(rc == 1 and "status=0" in out, "http: closed port reports a transport failure")
+    rc, out, _, _ = run(["--http-test", "ftp://example.test/x"])
+    check(rc == 1 and "status=0" in out, "http: unsupported URL scheme is rejected")
+
+    log.clear()
+    rc, out, st, _ = run(["--demo", "--dump", "--api-base", base, "--net-get", "/echo", "--net-get", "/status?code=404",
+                          "--net-get", "/status?code=429&retry=1", "--net-get", "/big"])
+    check(rc == 0 and st.get("net_n") == "4" and [st.get("net_%d" % i) for i in range(4)] == ["200", "404", "429", "200"],
+          "queue: four jobs complete in submit order with the right statuses", str(st))
+    check(st.get("net_pending") == "0", "queue: nothing left in flight")
+    paths = [e["path"] for e in log]
+    check(paths.count("/status?code=429&retry=1") == 2, "queue: a 429 with a short Retry-After is retried exactly once",
+          str(paths))
+    check(paths[:2] == ["/echo", "/status?code=404"], "queue: requests were sent in order")
+
+    d = tempfile.mkdtemp(prefix="bs-data-")
+    rc, out, st, _ = run(["--dump", "--no-browser", "--type-client", "  abc123def456  ", "--type-port", "9001"], data_dir=d)
+    ini = open(os.path.join(d, "settings.ini"), encoding="utf-8").read()
+    check("client_id=abc123def456\n" in ini and "port=9001\n" in ini, "settings: typed values are trimmed and saved", ini)
+    rc, out, st, _ = run(["--dump", "--no-browser"], data_dir=d)
+    check(st.get("port") == "9001" and st.get("client_id") == "abc123def456", "settings: values survive a restart")
+    rc, out, st, _ = run(["--dump", "--no-browser", "--act", f"{H_COPY_URI},0", "--act", f"{H_OPEN_DASH},0"], data_dir=d)
+    check(rc == 0, "setup: the scripted run exits by itself (no timeout)")
+    check("clipboard:http://127.0.0.1:9001/callback" in out, "setup: Copy puts the redirect URI (with the typed port) on the clipboard")
+    check("open:https://developer.spotify.com/dashboard" in out, "setup: Open dashboard opens the Spotify dashboard")
+    shutil.rmtree(d, ignore_errors=True)
+
+    flow("settings: a port below 1024 is ignored", ["--type-port", "80"], {"port": 8989}, demo=False)
+    flow("settings: a port above 65535 is ignored", ["--type-port", "70000"], {"port": 8989}, demo=False)
+    flow("sign-in with no client ID shows a banner and stays on setup", ["--act", f"{H_SIGNIN},0"],
+         {"page": PAGE_LOGIN, "banner": 1}, demo=False)
+    flow("banner can be dismissed", ["--act", f"{H_SIGNIN},0", "--act", f"{H_BANNER_X},0"], {"banner": 0}, demo=False)
+    flow("login screen shows setup with no banner at first", [], {"page": PAGE_LOGIN, "banner": 0}, demo=False)
+
+    def login_screen(path):
+        # banner strip is dark red (#7f1d1d) across the top when present; the setup column must still be centred
+        top = pixel(path, 640, 5)
+        return True if top == (127, 29, 29) else f"banner colour not found at the top: {top}"
+    flow("banner is painted above the login screen", ["--act", f"{H_SIGNIN},0"], {"banner": 1}, shot=True,
+         demo=False, extra_check=login_screen)
+
+    flow("banner with an action button shows on any page", ["--page", "2", "--banner", "Test message", "--banner-button", "Fix it"],
+         {"banner": 1, "page": PAGE_LIBRARY})
 
     # ---- the harness itself must fail loudly when a target is absent
     rc, out, st, _ = run(["--demo", "--act", "99,0"])

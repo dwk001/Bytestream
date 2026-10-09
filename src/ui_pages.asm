@@ -64,7 +64,7 @@ WSTR w_login_hint1, "Create a free app at developer.spotify.com/dashboard and ad
 WSTR w_login_hint2, "http://127.0.0.1:8989/callback as a redirect URI, then paste its client ID."
 WSTR w_login_hint3, "Playback needs a Spotify Premium account."
 WSTR w_loading, "Loading..."
-WSTR w_step1, "Create an app in the Spotify developer dashboard"
+WSTR w_step1, "Create an app in the Spotify dashboard"
 WSTR w_step2, "Add this Redirect URI to that app"
 WSTR w_step3, "Paste the app's Client ID"
 WSTR w_n1, "1"
@@ -542,9 +542,12 @@ PROC draw_edit_frame, 4
         mov     r12d, eax
         mov     ecx, dword loc(0)
         add     ecx, r12d                       ; edit x
-        mov     eax, dword loc(3)
-        S       12
-        mov     r13d, eax                       ; vertical padding
+        S       22                              ; one line of text
+        mov     r13d, dword loc(3)
+        sub     r13d, eax
+        jns     .vpad
+        xor     r13d, r13d
+.vpad:  shr     r13d, 1                         ; vertical padding = (frame - line) / 2
         mov     edx, dword loc(1)
         add     edx, r13d                       ; edit y
         mov     r8d, dword loc(2)
@@ -726,12 +729,8 @@ PROC page_settings, 8
         mov     qword outarg(5), 2
         call    draw_edit_frame
         lea     rcx, [w_open_dash]
-        S       60
-        add     eax, r14d
-        S       110
-        add     eax, [pg_x]
-        mov     edx, eax
-        S       24
+        S       194                             ; label (60) + port field (110) + gap (24)
+        mov     edx, [pg_x]
         add     edx, eax
         mov     r8d, r12d
         S       170
@@ -841,7 +840,8 @@ PROC draw_step, 4
         mov     edx, dword loc(2)
         add     edx, eax
         mov     r8d, dword loc(3)
-        mov     r9d, 400
+        S       318                             ; leaves room for the button / port field on the right
+        mov     r9d, eax
         mov     rcx, loc(1)
         mov     outarg(5), r12
         call    gfx_text
