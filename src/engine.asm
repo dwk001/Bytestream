@@ -59,7 +59,7 @@ WSTR w_lbl_openpage, "Open page"
 WSTR w_err_hpdied, "ByteStream's audio helper stopped unexpectedly. Press play to start it again; details are in librespot.log (Settings > Diagnostics > Open log folder)."
 WSTR w_err_hpspawn, "ByteStream's audio helper could not be started. Reinstall ByteStream (go-librespot.exe must sit next to bytestream.exe) or switch to the Edge engine in Settings."
 ZSTR hp_q, `"`
-ZSTR hp_cfgarg, ` --config_dir "`
+ZSTR hp_cfgarg, `" --config_dir "`
 ZSTR hp_flags, `" -c device_name=ByteStream -c device_type=computer -c audio_backend=wasapi -c credentials.type=device_auth -c zeroconf_enabled=false -c log_level=info -c bitrate=320 -c volume_steps=100 -c server.enabled=true -c server.address=127.0.0.1 -c server.image_size=large -c server.port=`
 ZSTR hp_initvol, ` -c initial_volume=`
 ZSTR hp_p_status, "/status"
