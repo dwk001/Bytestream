@@ -385,6 +385,8 @@ PROC ui_activate, 6
         je      .tab
         cmp     ecx, H_THEME
         je      .theme
+        cmp     ecx, H_ENGINE
+        je      .engine
         cmp     ecx, H_BACK
         je      .back
         cmp     ecx, H_DETAIL_PLAY
@@ -535,6 +537,16 @@ PROC ui_activate, 6
         call    theme_set
         call    ui_theme_changed
         jmp     .done
+.engine:
+        mov     ecx, dword loc(1)
+        cmp     ecx, [set_engine]
+        je      .done
+        mov     [set_engine], ecx
+        call    edge_stop                       ; the running helper (if any) ends; the next play starts the chosen one
+        mov     dword [np_valid], 0
+        mov     dword [np_paused], 1
+        call    settings_save
+        jmp     .done
 .back:  mov     eax, [back_page]
         mov     [page], eax
         mov     dword [scroll_main], 0
@@ -649,7 +661,14 @@ PROC ui_activate, 6
 .bclose:
         call    ui_banner_clear
         jmp     .done
-.bact:  mov     eax, dword loc(1)
+.bact:  cmp     dword loc(1), BA_PAIR
+        jne     .bnorm
+        mov     rcx, [hp_pair_url]              ; the pairing banner stays up until the helper reports a session
+        test    rcx, rcx
+        jz      .done
+        call    os_open_url
+        jmp     .done
+.bnorm: mov     eax, dword loc(1)
         call    ui_banner_clear
         cmp     dword loc(1), BA_DASHBOARD
         jne     .bset

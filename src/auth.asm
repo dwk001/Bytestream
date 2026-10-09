@@ -913,6 +913,7 @@ PROC auth_sign_out, 0
         call    app_free_all
         call    lib_reset
         call    edge_stop
+        call    hp_forget_login                 ; the helper's saved login belongs to the account that just left
         call    np_clear
         mov     dword [np_valid], 0
         mov     dword [signed_in], 0

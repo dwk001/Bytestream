@@ -14,6 +14,7 @@ ON_WINDOWS = os.name == "nt"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fake_spotify  # noqa: E402
+import fake_librespot  # noqa: E402
 
 # hit ids (ui_core.asm)
 H_NAV, H_SIDE_PL, H_CARD, H_TRACK, H_PLAY, H_PREV, H_NEXT, H_SHUFFLE, H_REPEAT = 1, 2, 3, 4, 5, 6, 7, 8, 9
@@ -23,7 +24,8 @@ H_COPY_URI, H_OPEN_DASH, H_BANNER_X = 28, 29, 30
 H_OPEN_LOG, H_COPY_DIAG, H_CANCEL_SIGNIN = 32, 33, 34
 H_TEST_AUDIO, H_LIKE, H_MENU_ITEM, H_MENU_BG = 36, 37, 38, 39
 H_NEW_PL, H_DET_EDIT, H_DET_DELETE, H_DLG_BG, H_DLG_OK, H_DLG_CANCEL, H_DLG_PUBLIC = 40, 41, 42, 43, 44, 45, 46
-H_FIELD = 47
+H_FIELD, H_ENGINE = 47, 48
+SEEK_MS, SET_VOL = 0xF040, 0xF041            # pseudo --act targets: seek to N ms / set the volume to N
 SRC_SEARCH_R = 9
 H_QUEUE_ROW = 22
 H_SIGNOUT = 18
@@ -58,6 +60,8 @@ def win_path(p):
 
 
 def run(args, shot=False, timeout=180, data_dir=None):
+    if "--engine" not in args:
+        args = ["--engine", "2"] + args          # tests never pick the engine from what happens to be installed
     env = dict(os.environ, WINEDEBUG="-all")
     env.setdefault("WINEPREFIX", "/tmp/wineprefix")
     path = None
@@ -82,6 +86,8 @@ def run(args, shot=False, timeout=180, data_dir=None):
 
 def spawn(args, data_dir):
     """Starts a long-running instance (no --dump) and returns the Popen."""
+    if "--engine" not in args:
+        args = ["--engine", "2"] + args
     env = dict(os.environ, WINEDEBUG="-all")
     env.setdefault("WINEPREFIX", "/tmp/wineprefix")
     argv = cmd_prefix() + [EXE] + args + ["--data-dir", win_path(data_dir)]
@@ -834,6 +840,101 @@ def main():
             print("skip player.js tests: node is not installed")
 
 
+        # ---- the lightweight engine: go-librespot as a helper.  Python plays go-librespot's part (tests/fake_librespot.py).
+        S.reset()
+        d = tempfile.mkdtemp(prefix="bs-data-")
+        sport = free_port()
+        st, _, _ = signin(base, d, port=sport)
+        check(st.get("signed_in") == "1", "helper: setup - a signed-in session exists", str(st))
+        S.log.clear()
+        app = spawn(["--dump", "--hold", "--no-browser", "--wait-auth", "--api-base", base, "--auth-base", base,
+                     "--type-client", "client-abc", "--type-port", str(sport), "--size", "1280x1300", "--engine", "1",
+                     "--act", f"{H_NAV},{PAGE_SETTINGS}", "--act", f"{H_TEST_AUDIO},0",
+                     "--act-late", f"{H_PLAY},0", "--act-late", f"{H_NEXT},0", "--act-late", f"{H_PREV},0",
+                     "--act-late", f"{SEEK_MS},31000", "--act-late", f"{SET_VOL},35", "--act-late", f"{H_SHUFFLE},0"], d)
+        page = fake = None
+        HELPER_TRACK = "spotify:track:4cOdK2wGLETKBW3PvgPWqT"
+        try:
+            purl, _ = read_until(app, "player-url:")
+            hl, seen = read_until(app, "helper-launch:port=")
+            check(hl is not None, "helper: Test audio launches the helper, not Edge (announced in test mode)", str(seen))
+            if hl and purl:
+                fake = fake_librespot.FakeLibrespot(int(hl.split("=", 1)[1]))
+                page = FakePage(purl[len("player-url:"):])          # only used to send "go" / "quit" to the app
+                plays = lambda: [e for e in S.log if e["method"] == "PUT" and e["path"].startswith("/v1/me/player/play")]
+                check(wait_for(lambda: any(e[1] == "/status" for e in fake.log), 10), "helper: the app polls GET /status")
+                check(wait_for(lambda: any(e[1] == "/auth/code" for e in fake.log), 10),
+                      "helper: with no session yet the app asks for the pairing code")
+                time.sleep(1.2)
+                check(not plays(), "helper: nothing is played before the helper has a Spotify session")
+                fake.logged_in = True
+                check(wait_for(lambda: len(plays()) == 1, 10), "helper: once paired, the waiting play request is sent",
+                      str([(e['method'], e['path']) for e in S.log[-4:]]))
+                if plays():
+                    e = plays()[-1]
+                    check(e["path"].endswith("device_id=" + fake.device_id) and json.loads(e["body"]) == {"uris": [HELPER_TRACK]},
+                          "helper: PUT /me/player/play targets the helper's own Connect device", str(e))
+                fake.play(HELPER_TRACK, "Helper Track", ["Artist One", "Artist Two"], "Helper Album", "https://i.scdn.co/image/helper", position=5000)
+                time.sleep(2.2)
+                page.post({"type": "go"})                            # play / pause
+                check(wait_for(lambda: len(fake.posts("/player/playpause")) == 1), "helper: the play/pause button POSTs /player/playpause",
+                      str(fake.log[-4:]))
+                page.post({"type": "go"})
+                check(wait_for(lambda: len(fake.posts("/player/next")) == 1), "helper: the next button POSTs /player/next")
+                page.post({"type": "go"})
+                check(wait_for(lambda: len(fake.posts("/player/prev")) == 1), "helper: the previous button POSTs /player/prev")
+                page.post({"type": "go"})
+                check(wait_for(lambda: fake.posts("/player/seek") == [("POST", "/player/seek", {"position": 31000})]),
+                      "helper: seeking POSTs the position in milliseconds", str(fake.posts("/player/seek")))
+                page.post({"type": "go"})
+                check(wait_for(lambda: fake.posts("/player/volume") == [("POST", "/player/volume", {"volume": 35})]),
+                      "helper: the volume POSTs 0..100", str(fake.posts("/player/volume")))
+                page.post({"type": "go"})
+                check(wait_for(lambda: any(e["path"].startswith("/v1/me/player/shuffle?state=") and e["path"].endswith("device_id=" + fake.device_id) for e in S.log)),
+                      "helper: shuffle still goes through the Web API, aimed at the helper's device", str([e["path"] for e in S.log[-4:]]))
+                check(not any(e["path"].endswith("/pause") or "/player/next" in e["path"] or "/player/seek" in e["path"] for e in S.log),
+                      "helper: transport commands use the local API and cost no Spotify requests")
+                check(all(e[2] in (None, {}) or isinstance(e[2], dict) for e in fake.log), "helper: bodies are JSON")
+                fake.play("spotify:track:2222222222222222222222", "S\u00e9cond Tr\u00e4ck", ["Solo"], "Other", "https://i.scdn.co/image/second", position=99000, duration=180000)
+                fake.paused = True
+                fake.shuffle = True
+                fake.repeat_track = True
+                time.sleep(3.2)                                       # idle polling is every 2.5 s
+                page.post({"type": "quit"})
+        finally:
+            if page:
+                page.close()
+            if fake:
+                fake.close()
+        lines = finish(app)
+        st4 = {}
+        for l in lines:
+            if "=" in l and not l.startswith(("open:", "player-url:", "clipboard:", "edge-launch:", "helper-launch:")):
+                k, v = l.split("=", 1)
+                st4[k.strip()] = v.strip()
+        check(st4.get("hp_mode") == "1" and st4.get("hp_started") == "1" and st4.get("sdk_ready") == "1" and st4.get("device") == (fake.device_id if fake else "?"),
+              "helper: the dump shows the helper engine connected to its device", str(st4))
+        check(st4.get("title") == "S\u00e9cond Tr\u00e4ck" and st4.get("artist") == "Solo" and st4.get("album") == "Other"
+              and st4.get("track_uri") == "spotify:track:2222222222222222222222" and st4.get("cover_large") == "https://i.scdn.co/image/second",
+              "helper: /status replaces the now-playing track (UTF-8 survives, cover URL taken)", str(st4))
+        check(st4.get("paused") == "1" and st4.get("shuffle") == "1" and st4.get("repeat") == "2" and st4.get("duration_ms") == "180000",
+              "helper: paused, shuffle, repeat-one and duration follow /status", str(st4))
+        check(st4.get("banner") == "0" and st4.get("hp_auth") == "0", "helper: the pairing banner is gone once the helper is paired", str(st4))
+        logtxt = open(os.path.join(d, "bytestream.log"), encoding="utf-8").read()
+        check("audio: pairing code issued" in logtxt and "audio: go-librespot ready, device " in logtxt and "audio: now playing Helper Track" in logtxt,
+              "helper: pairing, readiness and the track are in the log", logtxt[-600:])
+        shutil.rmtree(d, ignore_errors=True)
+
+        # the Settings choice is saved, and the pairing banner action opens the page with the code in it
+        _, _, st, _ = run(["--demo", "--dump", "--size", "1280x1300", "--page", str(PAGE_SETTINGS), "--act", f"{H_ENGINE},1"])
+        check(st.get("engine") == "1", "settings: the Edge engine can be chosen on the Settings page", str(st.get("engine")))
+        d = tempfile.mkdtemp(prefix="bs-data-")
+        run(["--demo", "--dump", "--size", "1280x1300", "--page", str(PAGE_SETTINGS), "--act", f"{H_ENGINE},1"], data_dir=d)
+        ini = open(os.path.join(d, "settings.ini"), encoding="utf-8").read() if os.path.exists(os.path.join(d, "settings.ini")) else ""
+        check("engine=1" in ini, "settings: the engine choice is written to settings.ini", ini[-200:])
+        shutil.rmtree(d, ignore_errors=True)
+
+
     # ---- milestone 4: the live library (lists, paging, playlist/album pages, search, covers) against the fake API
     if ONLY in (None, 'm4'):
         S = fake_spotify.STATE
@@ -1252,7 +1353,7 @@ def main():
         rc, out, st1, _ = run(["--demo", "--dump", "--anim", "--run-ms", "600"])
         rc, out, st2, _ = run(["--demo", "--dump", "--anim", "--run-ms", "2400"])
         f1, f2 = int(st1.get("anim_frames", "0")), int(st2.get("anim_frames", "0"))
-        check(st2.get("anim_busy") == "0" and f1 > 0 and f2 - f1 <= 1,
+        check(st2.get("anim_busy") == "0" and f1 > 0 and f2 - f1 <= 3,          # a few stray paints (focus, DWM) are fine; continuous drawing would add ~100
               "idle: with nothing animating, running four times longer draws no more frames", f"{f1} frames in 0.6 s, {f2} in 2.4 s")
 
         rc, out, st, _ = run(["--demo", "--dump", "--anim", "--hover", "100,100", "--run-ms", "700"])

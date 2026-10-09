@@ -469,10 +469,15 @@ PROC edge_stop, 0
         call    CloseHandle
         mov     qword [edge_proc], 0
 .out:   mov     dword [sdk_ready], 0
+        mov     dword [hp_started], 0
+        mov     dword [hp_busy], 0
+        mov     dword [hp_auth_busy], 0
+        mov     qword [hp_hold_until], 0
         EPROC
 
 ; UI timer: notices a dead helper, gives up on a helper that never connects, stops an idle one
 PROC edge_tick, 0
+        call    hp_tick                         ; (helper engine) status poll; does nothing for Edge
         cmp     qword [play_retry_at], 0
         je      .noretry
         call    GetTickCount64
@@ -504,11 +509,19 @@ PROC edge_tick, 0
         call    log_num
         call    edge_stop
         mov     dword [np_paused], 1
+        cmp     dword [hp_mode], 0
+        je      .out
+        lea     rcx, [w_err_hpdied]             ; the helper (not Edge) ended on its own: say where to look
+        xor     edx, edx
+        xor     r8d, r8d
+        call    ui_banner
         jmp     .out
 .running:
         cmp     dword [sdk_ready], 0
         jne     .idle
 .waitconn:
+        cmp     dword [hp_auth_shown], 0
+        jne     .out                            ; waiting for the user to pair the helper: that can take a while
         cmp     qword [play_pending], 0
         je      .out
         call    GetTickCount64
@@ -552,6 +565,8 @@ PROC edge_tick, 0
 audio_cmd:
         cmp     dword [sdk_ready], 0
         je      .no
+        cmp     dword [hp_mode], 0
+        jne     hp_cmd                          ; the lightweight engine: the helper's local API
         jmp     srv_cmd_push
 .no:    ret
 
@@ -585,7 +600,12 @@ PROC real_seek, 4
         mov     [np_tick], rax
         cmp     dword [sdk_ready], 0
         je      .out
-        BUFZERO 2
+        cmp     dword [hp_mode], 0
+        je      .page
+        mov     ecx, dword loc(3)
+        call    hp_seek
+        jmp     .out
+.page:  BUFZERO 2
         lea     rcx, loc(2)
         lea     rdx, [c_seek_pre]
         call    buf_append_z
@@ -606,7 +626,12 @@ PROC real_set_volume, 4
         mov     dword loc(3), ecx
         cmp     dword [sdk_ready], 0
         je      .out
-        BUFZERO 2
+        cmp     dword [hp_mode], 0
+        je      .page
+        mov     ecx, dword loc(3)
+        call    hp_volume
+        jmp     .out
+.page:  BUFZERO 2
         lea     rcx, loc(2)
         lea     rdx, [c_vol_pre]
         call    buf_append_z
@@ -699,7 +724,7 @@ PROC audio_start, 2
         call    mem_free
         mov     rax, loc(0)
         mov     [play_pending], rax
-        call    edge_launch
+        call    hp_launch_any                   ; the chosen engine: go-librespot or Edge
         test    eax, eax
         jnz     .started
         mov     rcx, [play_pending]
@@ -714,6 +739,7 @@ PROC audio_start, 2
 ; rcx = heap JSON body: sends it to the Connect device (frees it).   Bufs: url top 5
 PROC audio_do_play, 6
         mov     loc(0), rcx
+        call    hp_hold_start                   ; (helper engine) ignore the old track's status for a moment
         mov     rcx, [play_last]                ; keep a copy: a brand-new device is sometimes not known to the Web API yet
         call    mem_free
         mov     rcx, loc(0)
@@ -1200,6 +1226,7 @@ PROC audio_on_state, 8
         call    u8_dup
         mov     [np_uri], rax
         mov     rcx, loc(0)
+        lea     rdx, [k_t_artists]
         call    audio_artists
         mov     [np_artist], rax
         ; covers: first image is the largest, last the smallest
@@ -1273,8 +1300,7 @@ PROC audio_on_state, 8
 .out:   EPROC
 
 ; rcx = JSON with track.artists = ["a","b"] -> rax = heap UTF-16 "a, b"
-PROC audio_artists, 8
-        lea     rdx, [k_t_artists]
+PROC audio_artists, 8                           ; rcx = JSON, rdx = path of the array of names
         call    json_path
         mov     loc(0), rax
         BUFZERO 5

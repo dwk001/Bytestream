@@ -5,7 +5,11 @@ on:
   pull_request:
 
 jobs:
+  librespot:
+    uses: ./.github/workflows/go-librespot.yml
+
   build-and-test:
+    needs: librespot
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
@@ -28,6 +32,12 @@ jobs:
       - name: Build
         shell: pwsh
         run: python tools/build.py
+
+      - name: Put the audio helper next to the exe (go-librespot.exe, its DLLs and licence)
+        uses: actions/download-artifact@v4
+        with:
+          name: go-librespot-windows
+          path: build
 
       - name: Playwright (drives the preinstalled Edge for the player page test)
         shell: pwsh
@@ -100,5 +110,10 @@ jobs:
           path: |
             build/bytestream.exe
             build/bytestream.map
+            build/go-librespot.exe
+            build/*.dll
+            build/go-librespot-LICENSE.txt
+            build/go-librespot-VERSION.txt
+            THIRD-PARTY.txt
             shots/*.png
             test.log

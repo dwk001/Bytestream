@@ -1,6 +1,6 @@
 ; settings.asm - %APPDATA%\ByteStream\settings.ini (or --data-dir), edited from the GUI.
 ;
-; File format: one "key=value" per line, UTF-8.   Keys: client_id, port, theme, scale, volume.
+; File format: one "key=value" per line, UTF-8.   Keys: client_id, port, theme, scale, volume, engine, winw, winh.
 
 extern SHGetFolderPathW, CreateDirectoryW, CreateFileW, ReadFile, WriteFile, CloseHandle, GetFileSizeEx
 extern lstrcpyW, lstrcatW
@@ -30,6 +30,7 @@ ZSTR k_s_port, "port="
 ZSTR k_s_theme, "theme="
 ZSTR k_s_scale, "scale="
 ZSTR k_s_volume, "volume="
+ZSTR k_s_engine, "engine="
 ZSTR k_s_winw, "winw="
 ZSTR k_s_winh, "winh="
 ZSTR s_nl_lf, `\n`
@@ -203,13 +204,25 @@ PROC settings_apply_line, 2
         lea     rdx, [k_s_volume]
         call    u8_starts
         test    eax, eax
-        jz      .winw
+        jz      .eng
         mov     rcx, loc(0)
         add     rcx, 7
         call    json_int
         cmp     eax, 100
         ja      .out
         mov     [set_volume], eax
+        jmp     .out
+.eng:   mov     rcx, loc(0)
+        lea     rdx, [k_s_engine]
+        call    u8_starts
+        test    eax, eax
+        jz      .winw
+        mov     rcx, loc(0)
+        add     rcx, 7
+        call    json_int
+        cmp     eax, 1
+        ja      .out
+        mov     [set_engine], eax
         jmp     .out
 .winw:  mov     rcx, loc(0)
         lea     rdx, [k_s_winw]
@@ -316,6 +329,15 @@ PROC settings_save, 4
         call    buf_append_z
         lea     rcx, loc(3)
         mov     edx, [np_vol]
+        call    buf_append_u64
+        lea     rcx, loc(3)
+        lea     rdx, [s_nl_lf]
+        call    buf_append_z
+        lea     rcx, loc(3)
+        lea     rdx, [k_s_engine]
+        call    buf_append_z
+        lea     rcx, loc(3)
+        mov     edx, [set_engine]
         call    buf_append_u64
         lea     rcx, loc(3)
         lea     rdx, [s_nl_lf]

@@ -45,6 +45,10 @@ WSTR w_signout, "Sign out"
 WSTR w_theme_dark, "Dark"
 WSTR w_theme_mid, "Midnight"
 WSTR w_theme_light, "Light"
+WSTR w_engine_sec, "Playback engine"
+WSTR w_engine_hint, "Lightweight plays through a small helper program; Edge uses Spotify's official browser player."
+WSTR w_engine_lite, "Lightweight"
+WSTR w_engine_edge, "Microsoft Edge"
 WSTR w_shortcuts, "Keyboard and mouse"
 WSTR w_sc1, "Space  Play / pause        N / P  Next / previous track"
 WSTR w_sc2, "Left / Right  Seek 5 seconds        Up / Down  Volume"
@@ -978,6 +982,49 @@ PROC page_settings, 8
         sete    r9b
         mov     qword outarg(5), H_THEME
         mov     qword outarg(6), 2
+        call    draw_pill
+        S       36
+        add     r12d, eax
+        S       36
+        add     r12d, eax
+        lea     rcx, [w_engine_sec]             ; --- which engine plays the audio
+        mov     edx, [pg_x]
+        mov     r8d, r12d
+        mov     r9d, [pg_w]
+        call    draw_section
+        mov     r12d, eax
+        S       8
+        add     r12d, eax
+        SETFONT F_BODY
+        SETCOL  T_MUTED_FG
+        S       26
+        mov     ebx, eax
+        TXTL    w_engine_hint, dword [pg_x], r12d, dword [pg_w], ebx
+        add     r12d, ebx
+        S       10
+        add     r12d, eax
+        mov     r13d, [pg_x]
+        S       10
+        mov     r14d, eax
+        lea     rcx, [w_engine_lite]
+        mov     edx, r13d
+        mov     r8d, r12d
+        xor     r9d, r9d
+        cmp     dword [set_engine], 0
+        sete    r9b
+        mov     qword outarg(5), H_ENGINE
+        mov     qword outarg(6), 0
+        call    draw_pill
+        lea     r13d, [r13+rax]
+        add     r13d, r14d
+        lea     rcx, [w_engine_edge]
+        mov     edx, r13d
+        mov     r8d, r12d
+        xor     r9d, r9d
+        cmp     dword [set_engine], 1
+        sete    r9b
+        mov     qword outarg(5), H_ENGINE
+        mov     qword outarg(6), 1
         call    draw_pill
         S       36
         add     r12d, eax

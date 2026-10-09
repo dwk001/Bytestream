@@ -51,12 +51,14 @@
 %define H_LIKE        37                ; arg: see like_uri_for
 %define H_CARD_PLAY   26
 %define H_FIELD       47                ; arg = field index (field.asm)
+%define H_ENGINE      48                ; arg = playback engine (0 lightweight helper, 1 Edge)
 %define H_PILL        27
 
 %define BA_NONE       0
 %define BA_SETTINGS   1                 ; banner action: open Settings
 %define BA_DASHBOARD  2                 ; banner action: open the Spotify dashboard
 %define BA_GET_EDGE   3                 ; banner action: open the Microsoft Edge download page
+%define BA_PAIR       4                 ; banner action: open the pairing page of the audio helper
 
 ; ---- track / card list sources used in H_TRACK / H_CARD args
 %define SRC_RECENT    1

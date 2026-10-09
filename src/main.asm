@@ -30,6 +30,7 @@ text_begin:
 %include "auth.asm"
 %include "localsrv.asm"
 %include "audio.asm"
+%include "engine.asm"
 %include "ui_widgets.asm"
 %include "field.asm"
 %include "library.asm"
@@ -130,6 +131,7 @@ WSTR a_api, "--api-base"
 WSTR a_authb, "--auth-base"
 WSTR a_ddir, "--data-dir"
 WSTR a_edge, "--edge-path"
+WSTR a_engine, "--engine"
 WSTR a_imgb, "--img-budget"
 WSTR a_nobrowser, "--no-browser"
 WSTR a_hold, "--hold"
@@ -198,6 +200,11 @@ ZSTR d_device, "device="
 ZSTR d_pos, "position_ms="
 ZSTR d_dur, "duration_ms="
 ZSTR d_sdk, "sdk_ready="
+ZSTR d_hpmode, "hp_mode="
+ZSTR d_hpstart, "hp_started="
+ZSTR d_hpport, "hp_port="
+ZSTR d_hpauth, "hp_auth="
+ZSTR d_engine, "engine="
 ZSTR d_dalb, "artist_albums="
 ZSTR d_dlg, "dialog="
 ZSTR d_dlgpub, "dialog_public="
@@ -584,8 +591,19 @@ PROC parse_cli, 4
         lea     rdx, [a_edge]
         call    arg_is
         test    eax, eax
-        jz      .b16c
+        jz      .b16eng
         mov     [edge_override], rsi
+        inc     qword loc(2)
+        jmp     .next
+.b16eng:
+        mov     rcx, rbx
+        lea     rdx, [a_engine]
+        call    arg_is
+        test    eax, eax
+        jz      .b16c
+        mov     rcx, rsi
+        call    w_atoi
+        mov     [cli_engine], eax               ; --engine 1 = helper (go-librespot), 2 = Edge: tests choose without installing anything
         inc     qword loc(2)
         jmp     .next
 .b16c:  mov     rcx, rbx
@@ -967,6 +985,10 @@ PROC run_act_at, 2
         call    net_wait_idle                   ; let requests started by earlier actions finish (a page's tracks, say)
         mov     rcx, [hwnd]
         call    UpdateWindow                    ; paint what arrived since the last frame, so the hit list is current
+        cmp     r12d, 0xF040                    ; pseudo targets 0xF040 / 0xF041: seek to N ms / set the volume to N (no bar to drag in tests)
+        je      .pseek
+        cmp     r12d, 0xF041
+        je      .pvol
         cmp     r12d, 0xF000                    ; pseudo targets: keyboard / text / mouse input to a field (see run_tests.py)
         jb      .real
         cmp     r12d, 0xF040
@@ -1015,6 +1037,12 @@ PROC run_act_at, 2
         and     r8d, 1
         mov     ecx, esi
         call    field_mouse
+        jmp     .painted
+.pseek: mov     ecx, r13d
+        call    real_seek
+        jmp     .painted
+.pvol:  mov     ecx, r13d
+        call    real_set_volume
         jmp     .painted
 .real:
         mov     eax, r12d
@@ -1230,6 +1258,11 @@ PROC dump_state, 4
         DUMPNUM d_pos, dword [np_pos]
         DUMPNUM d_dur, dword [np_dur]
         DUMPNUM d_sdk, dword [sdk_ready]
+        DUMPNUM d_hpmode, dword [hp_mode]
+        DUMPNUM d_hpstart, dword [hp_started]
+        DUMPNUM d_hpport, dword [hp_port]
+        DUMPNUM d_hpauth, dword [hp_auth_shown]
+        DUMPNUM d_engine, dword [set_engine]
         DUMPNUM d_dalb, dword [lst_dalbums+LS_COUNT]
         DUMPNUM d_dlg, dword [dlg_kind]
         DUMPNUM d_dlgpub, dword [dlg_public]
