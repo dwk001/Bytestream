@@ -226,7 +226,7 @@ def main():
             return True if got == expect else f"bg pixel {got} != {expect}"
         return chk
 
-    flow("theme: dark background", ["--theme", "0"], {"theme": 0}, shot=True, extra_check=bg((10, 10, 10)))
+    flow("theme: dark background is #121212", ["--theme", "0"], {"theme": 0}, shot=True, extra_check=bg((18, 18, 18)))
     flow("theme: midnight background", ["--theme", "1"], {"theme": 1}, shot=True, extra_check=bg((7, 17, 31)))
     flow("theme: light background", ["--theme", "2"], {"theme": 2}, shot=True, extra_check=bg((250, 250, 250)))
     flow("settings page switches the theme", ["--act", f"{H_NAV},{PAGE_SETTINGS}", "--act", f"{H_THEME},1"], {"theme": 1})

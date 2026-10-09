@@ -338,7 +338,7 @@ PROC draw_seekbar, 10
         mov     eax, r12d
         shr     eax, 1
         sub     r13d, eax                       ; track y
-        SETCOL_A T_ACTIVE, 0xCC
+        SETCOL  T_TRACK
         mov     eax, r12d
         shr     eax, 1
         mov     outarg(5), rax
@@ -409,7 +409,7 @@ PROC draw_volume, 10
         mov     r13d, dword loc(1)
         shr     eax, 1
         sub     r13d, eax
-        SETCOL_A T_ACTIVE, 0xCC
+        SETCOL  T_TRACK
         mov     eax, r12d
         shr     eax, 1
         mov     outarg(5), rax
