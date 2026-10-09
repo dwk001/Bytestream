@@ -288,9 +288,9 @@ def main():
     flow("login screen shows setup with no banner at first", [], {"page": PAGE_LOGIN, "banner": 0}, demo=False)
 
     def login_screen(path):
-        # banner strip is dark red (#7f1d1d) across the top when present; the setup column must still be centred
+        # the banner strip (theme danger colour, #8b1a1a in the dark theme) spans the top when present
         top = pixel(path, 640, 5)
-        return True if top == (127, 29, 29) else f"banner colour not found at the top: {top}"
+        return True if top == (139, 26, 26) else f"banner colour not found at the top: {top}"
     flow("banner is painted above the login screen", ["--act", f"{H_SIGNIN},0"], {"banner": 1}, shot=True,
          demo=False, extra_check=login_screen)
 
