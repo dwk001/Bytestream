@@ -20,6 +20,7 @@ H_NAV, H_SIDE_PL, H_CARD, H_TRACK, H_PLAY, H_PREV, H_NEXT, H_SHUFFLE, H_REPEAT =
 H_QUEUE, H_FULL, H_TAB, H_THEME, H_BACK, H_FS_CLOSE, H_DETAIL_PLAY = 12, 13, 14, 17, 19, 20, 21
 H_SIGNIN, H_DEMO = 16, 24
 H_COPY_URI, H_OPEN_DASH, H_BANNER_X = 28, 29, 30
+H_OPEN_LOG, H_COPY_DIAG = 32, 33
 SRC_RECENT, SRC_LIKED, SRC_PLAYLISTS, SRC_ALBUMS = 1, 2, 5, 6
 PAGE_HOME, PAGE_SEARCH, PAGE_LIBRARY, PAGE_DETAIL, PAGE_SETTINGS, PAGE_LOGIN = range(6)
 
@@ -70,6 +71,36 @@ def run(args, shot=False, timeout=180, data_dir=None):
             k, v = line.split("=", 1)
             state[k.strip()] = v.strip()
     return p.returncode, p.stdout, state, path
+
+
+def spawn(args, data_dir):
+    """Starts a long-running instance (no --dump) and returns the Popen."""
+    env = dict(os.environ, WINEDEBUG="-all")
+    env.setdefault("WINEPREFIX", "/tmp/wineprefix")
+    argv = cmd_prefix() + [EXE] + args + ["--data-dir", win_path(data_dir)]
+    kw = {} if ON_WINDOWS else {"start_new_session": True}
+    return subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, **kw)
+
+
+def stop(proc):
+    try:
+        if ON_WINDOWS:
+            proc.terminate()
+        else:
+            import signal
+            os.killpg(proc.pid, signal.SIGTERM)
+        proc.wait(timeout=15)
+    except Exception:
+        proc.kill()
+
+
+def resolve_rvas(log_text):
+    """Maps every rva=0x... in a crash report to a function name using build/bytestream.map."""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import crashmap
+    syms = crashmap.load(os.path.join(ROOT, "build", "bytestream.map"))
+    import re
+    return [crashmap.resolve(syms, int(m, 16)) for m in re.findall(r"rva=0x([0-9a-fA-F]+)", log_text)]
 
 
 def pixel(path, x, y):
@@ -263,6 +294,49 @@ def main():
 
     flow("banner with an action button shows on any page", ["--page", "2", "--banner", "Test message", "--banner-button", "Fix it"],
          {"banner": 1, "page": PAGE_LIBRARY})
+
+
+    # ---- diagnostics: log file, crash report, settings buttons, single instance
+    d = tempfile.mkdtemp(prefix="bs-data-")
+    run(["--demo", "--dump", "--api-base", base, "--net-get", "/echo", "--net-get", "/status?code=404"], data_dir=d)
+    text = open(os.path.join(d, "bytestream.log"), encoding="utf-8").read()
+    import re
+    check(re.search(r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3} start ByteStream 0\.1 build \S+, Windows \d+\.\d+\.\d+$", text, re.M) is not None,
+          "log: timestamped start line with version, build id and Windows version", text[:200])
+    check(f"http GET {base}/echo -> 200" in text and f"http GET {base}/status?code=404 -> 404" in text,
+          "log: every HTTP request is recorded with its status")
+    check("Bearer" not in text and "probe-token" not in text, "log: no credentials are written")
+
+    rc, out, _, _ = run(["--demo", "--no-browser", "--crash-test"], data_dir=d, timeout=60)
+    text = open(os.path.join(d, "bytestream.log"), encoding="utf-8").read()
+    check(rc != 0, "crash: the process exits non-zero after a fault", "rc=%s" % rc)
+    check("CRASH code=0xc0000005" in text, "crash: report names the exception")
+    names = resolve_rvas(text[text.index("CRASH"):])
+    check(names and names[0].startswith("crash_test_fn+"), "crash: the faulting address resolves to crash_test_fn via the linker map", str(names))
+    check(any(n.startswith("start") for n in names[1:]), "crash: the stack walk reaches the caller (start)", str(names))
+    check("rax=0x" in text and "r15=0x" in text, "crash: all sixteen registers are recorded")
+    shutil.rmtree(d, ignore_errors=True)
+
+    rc, out, st, _ = run(["--demo", "--dump", "--no-browser", "--page", "4", "--size", "1280x1300", "--act", f"{H_COPY_DIAG},0", "--act", f"{H_OPEN_LOG},0"])
+    check("clipboard:start ByteStream 0.1 build" in out and "Windows " in out, "settings: Copy diagnostics puts version + OS (+ log tail) on the clipboard")
+    check("open:" in out and "bs-data" in out, "settings: Open log folder opens the data directory")
+
+    d = tempfile.mkdtemp(prefix="bs-data-")
+    first = spawn(["--demo", "--no-browser"], d)
+    deadline = time.time() + 30
+    while time.time() < deadline and not os.path.exists(os.path.join(d, "bytestream.log")):
+        time.sleep(0.3)
+    t0 = time.time()
+    rc, out, st, _ = run(["--demo", "--dump", "--no-browser"], data_dir=d, timeout=30)
+    took = time.time() - t0
+    check(rc == 0 and "page" not in st, "single instance: a second launch with the same data dir exits without starting", out[:100])
+    check(took < 10, "single instance: the second launch returns immediately", "%.1fs" % took)
+    d2 = tempfile.mkdtemp(prefix="bs-data-")
+    rc, out, st, _ = run(["--demo", "--dump", "--no-browser"], data_dir=d2)
+    check(st.get("page") == "0", "single instance: a different data dir is a separate instance")
+    stop(first)
+    shutil.rmtree(d, ignore_errors=True)
+    shutil.rmtree(d2, ignore_errors=True)
 
     # ---- the harness itself must fail loudly when a target is absent
     rc, out, st, _ = run(["--demo", "--act", "99,0"])

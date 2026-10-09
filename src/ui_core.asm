@@ -45,6 +45,8 @@ extern CreateFontIndirectW, CreateSolidBrush, SetTextColor, SetBkColor
 %define H_OPEN_DASH   29
 %define H_BANNER_X    30
 %define H_BANNER_ACT  31
+%define H_OPEN_LOG    32
+%define H_COPY_DIAG   33
 
 %define BA_NONE       0
 %define BA_SETTINGS   1                 ; banner action: open Settings
@@ -132,6 +134,7 @@ banner_label:   resq 1                  ; UTF-16, owned: action button label (0 
 banner_code:    resd 1
 banner_h:       resd 1
 redir_w:        resq 1                  ; UTF-16 copy of the redirect URI for display
+ver_w:          resq 1                  ; UTF-16 "Version 0.1 (build ...)" for About
 search_dirty:   resd 1
 user_name:      resq 1                  ; UTF-16, owned
 logfont:        resb 96

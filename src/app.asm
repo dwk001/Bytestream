@@ -334,6 +334,10 @@ PROC ui_activate, 6
         je      .bclose
         cmp     ecx, H_BANNER_ACT
         je      .bact
+        cmp     ecx, H_OPEN_LOG
+        je      .openlog
+        cmp     ecx, H_COPY_DIAG
+        je      .copydiag
         xor     eax, eax
         jmp     .out
 .nav:   mov     eax, edx
@@ -454,6 +458,12 @@ PROC ui_activate, 6
         jmp     .done
 .copyuri:
         call    app_copy_redirect
+        jmp     .done
+.openlog:
+        call    app_open_log_folder
+        jmp     .done
+.copydiag:
+        call    app_copy_diagnostics
         jmp     .done
 .dash:  lea     rcx, [s_dashboard_url]
         call    os_open_url
@@ -759,3 +769,85 @@ PROC app_sign_in_check, 0
         mov     dword [focus_req], 3
         xor     eax, eax
 .out:   EPROC
+
+PROC app_open_log_folder, 2
+        lea     rcx, [data_dir]
+        mov     rdx, -1
+        call    w_to_u8
+        mov     loc(0), rax
+        mov     rcx, rax
+        call    os_open_url                     ; ShellExecute "open" on a folder opens Explorer
+        mov     rcx, loc(0)
+        call    mem_free
+        EPROC
+
+; Version / OS line followed by the tail of the log, on the clipboard.
+PROC app_copy_diagnostics, 6
+        mov     qword loc(1), 0                 ; Buf based at &loc(3)
+        mov     qword loc(2), 0
+        mov     qword loc(3), 0
+        lea     rcx, loc(3)
+        lea     rdx, [l_start]
+        call    buf_append_z
+        lea     rcx, loc(3)
+        lea     rdx, [app_version]
+        call    buf_append_z
+        lea     rcx, loc(3)
+        lea     rdx, [l_build]
+        call    buf_append_z
+        lea     rcx, loc(3)
+        lea     rdx, [build_id]
+        call    buf_append_z
+        lea     rcx, loc(3)
+        lea     rdx, [l_win]
+        call    buf_append_z
+        lea     rcx, loc(3)
+        mov     edx, [os_ver]
+        call    buf_append_u64
+        lea     rcx, loc(3)
+        lea     rdx, [l_dot]
+        call    buf_append_z
+        lea     rcx, loc(3)
+        mov     edx, [os_ver+4]
+        call    buf_append_u64
+        lea     rcx, loc(3)
+        lea     rdx, [l_dot]
+        call    buf_append_z
+        lea     rcx, loc(3)
+        mov     edx, [os_ver+8]
+        call    buf_append_u64
+        lea     rcx, loc(3)
+        lea     rdx, [l_nl]
+        call    buf_append_z
+        lea     rcx, [log_path]
+        call    file_read_all                   ; rax = contents, rdx = length
+        test    rax, rax
+        jz      .send
+        mov     loc(0), rax
+        mov     rsi, rax
+        cmp     rdx, 6000
+        jbe     .copy
+        lea     rsi, [rax+rdx-6000]             ; only the tail ...
+.skip:  cmp     byte [rsi], 10                  ; ... starting at a line boundary
+        je      .bol
+        cmp     byte [rsi], 0
+        je      .copy
+        inc     rsi
+        jmp     .skip
+.bol:   inc     rsi
+.copy:  lea     rcx, loc(3)
+        mov     rdx, rsi
+        call    buf_append_z
+        mov     rcx, loc(0)
+        call    mem_free
+.send:  mov     rcx, loc(3)
+        call    os_clipboard
+        lea     rcx, loc(3)
+        call    buf_free
+        lea     rcx, [w_diag_copied]
+        call    ui_toast
+        EPROC
+
+section .data
+WSTR w_diag_copied, "Diagnostics copied to the clipboard"
+section .text

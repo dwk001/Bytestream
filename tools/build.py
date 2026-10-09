@@ -10,7 +10,7 @@ import os, shutil, subprocess, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILD = os.path.join(ROOT, "build")
-LIBS = "kernel32 user32 gdi32 gdiplus shell32 shlwapi winhttp ws2_32 bcrypt crypt32 ole32".split()
+LIBS = "kernel32 user32 gdi32 gdiplus shell32 shlwapi winhttp ws2_32 bcrypt crypt32 ole32 ntdll".split()
 
 
 def tool(env, *names):
@@ -31,6 +31,15 @@ def run(cmd, **kw):
     return r
 
 
+def git_id():
+    try:
+        h = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=ROOT).stdout.strip()
+        dirty = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, cwd=ROOT).stdout.strip()
+        return (h or "dev") + ("+" if dirty and h else "")
+    except OSError:
+        return "dev"
+
+
 def main():
     nasm = tool("NASM", "nasm")
     lld = tool("LLD_LINK", "lld-link")
@@ -42,7 +51,8 @@ def main():
     implibs.main(BUILD)
 
     obj = os.path.join(BUILD, "main.obj")
-    run([nasm, "-fwin64", "-Isrc/", "src/main.asm", "-o", obj])
+    build_id = os.environ.get("BUILD_ID") or git_id()
+    run([nasm, "-fwin64", "-Isrc/", '-DBUILD_ID="%s"' % build_id, "src/main.asm", "-o", obj])
 
     # [symbol+register] addressing assembles to a 32-bit absolute address, which faults at a 64-bit image base.
     rel = subprocess.run([readobj, "--relocations", obj], capture_output=True, text=True, cwd=ROOT).stdout

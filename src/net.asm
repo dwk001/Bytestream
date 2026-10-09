@@ -349,6 +349,8 @@ PROC net_run_job, 4
         mov     [rbx+JB_STATUS], eax
         mov     rcx, loc(1)
         call    mem_free
+        mov     rcx, rbx
+        call    log_http
         mov     eax, [rbx+JB_STATUS]
         inc     dword loc(0)
         cmp     dword loc(0), 2
@@ -451,3 +453,69 @@ h_debug:
         mov     [rdx+rax*8], ecx
         inc     dword [dbg_count]
 .r:     ret
+
+section .data
+ZSTR l_http, "http "
+ZSTR l_arrow, " -> "
+ZSTR l_bytes, " (bytes "
+ZSTR l_paren, ")"
+ZSTR l_fail, "FAILED (transport error "
+section .text
+
+; rcx = finished job: "http <METHOD> <url> -> <status> (bytes N)".  URLs carry no secrets (tokens travel in headers).
+PROC log_http, 6
+        mov     rsi, rcx
+        mov     qword loc(2), 0                 ; Buf based at &loc(4)
+        mov     qword loc(3), 0
+        mov     qword loc(4), 0
+        lea     rcx, loc(4)
+        lea     rdx, [l_http]
+        call    buf_append_z
+        mov     rcx, [rsi+JB_METHOD]            ; static UTF-16 verb -> UTF-8
+        mov     rdx, -1
+        call    w_to_u8
+        mov     loc(0), rax
+        lea     rcx, loc(4)
+        mov     rdx, rax
+        call    buf_append_z
+        mov     rcx, loc(0)
+        call    mem_free
+        lea     rcx, loc(4)
+        lea     rdx, [l_sp1]
+        call    buf_append_z
+        lea     rcx, loc(4)
+        mov     rdx, [rsi+JB_URL]
+        call    buf_append_z
+        lea     rcx, loc(4)
+        lea     rdx, [l_arrow]
+        call    buf_append_z
+        mov     eax, [rsi+JB_STATUS]
+        test    eax, eax
+        jnz     .ok
+        lea     rcx, loc(4)
+        lea     rdx, [l_fail]
+        call    buf_append_z
+        lea     rcx, loc(4)
+        mov     edx, [g_http_err]
+        call    buf_append_u64
+        lea     rcx, loc(4)
+        lea     rdx, [l_paren]
+        call    buf_append_z
+        jmp     .emit
+.ok:    lea     rcx, loc(4)
+        mov     edx, eax
+        call    buf_append_u64
+        lea     rcx, loc(4)
+        lea     rdx, [l_bytes]
+        call    buf_append_z
+        lea     rcx, loc(4)
+        mov     rdx, [rsi+JB_RESP+8]
+        call    buf_append_u64
+        lea     rcx, loc(4)
+        lea     rdx, [l_paren]
+        call    buf_append_z
+.emit:  mov     rcx, loc(4)
+        call    log_msg
+        lea     rcx, loc(4)
+        call    buf_free
+        EPROC

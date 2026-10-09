@@ -13,13 +13,13 @@ IMPORTS = {
         CloseHandle GetLastError CreateThread GetCurrentThreadId Sleep GetTickCount64 GetEnvironmentVariableW
         SetEnvironmentVariableW GetFileSizeEx CreateDirectoryW GetStdHandle LocalFree GetModuleFileNameW
         QueryPerformanceCounter QueryPerformanceFrequency FlushFileBuffers GetFileAttributesW DeleteFileW
-        CreateEventW SetEvent WaitForSingleObject GetSystemTimeAsFileTime GetLocalTime lstrcatW GlobalAlloc GlobalLock GlobalUnlock GlobalFree""",
+        CreateEventW SetEvent WaitForSingleObject GetSystemTimeAsFileTime GetLocalTime SetUnhandledExceptionFilter MoveFileExW lstrcatW CreateMutexW GlobalAlloc GlobalLock GlobalUnlock GlobalFree""",
     "user32": """RegisterClassExW CreateWindowExW DefWindowProcW ShowWindow UpdateWindow GetMessageW TranslateMessage
         DispatchMessageW PostQuitMessage PostMessageW PostThreadMessageW SendMessageW BeginPaint EndPaint InvalidateRect
         GetClientRect GetWindowRect LoadCursorW SetCursor GetDC ReleaseDC SetTimer KillTimer MoveWindow DestroyWindow
         SetWindowTextW GetWindowTextW SetFocus GetFocus GetKeyState AdjustWindowRectEx TrackMouseEvent SetProcessDPIAware
         GetDpiForWindow GetDpiForSystem GetSystemMetrics ScreenToClient ClientToScreen SetCapture ReleaseCapture MessageBoxW
-        PeekMessageW OpenClipboard EmptyClipboard SetClipboardData CloseClipboard GetWindowLongPtrW SetWindowLongPtrW IsWindow SetWindowPos EnableWindow""",
+        PeekMessageW FindWindowW SetForegroundWindow OpenClipboard EmptyClipboard SetClipboardData CloseClipboard GetWindowLongPtrW SetWindowLongPtrW IsWindow SetWindowPos EnableWindow""",
     "gdi32": """CreateCompatibleDC CreateDIBSection SelectObject DeleteObject DeleteDC BitBlt GdiFlush SetBkColor SetTextColor
         CreateSolidBrush CreateFontW CreateFontIndirectW""",
     "gdiplus": """GdiplusStartup GdiplusShutdown GdipCreateFromHDC GdipDeleteGraphics GdipSetSmoothingMode
@@ -44,6 +44,7 @@ IMPORTS = {
     "bcrypt": """BCryptGenRandom BCryptOpenAlgorithmProvider BCryptCloseAlgorithmProvider BCryptHash""",
     "crypt32": """CryptProtectData CryptUnprotectData""",
     "ole32": """CoInitializeEx CoUninitialize CoTaskMemFree CoCreateInstance""",
+    "ntdll": """RtlGetVersion""",
 }
 
 # The WebView2 loader ships beside the exe, so it is delay-bound: see player.asm.

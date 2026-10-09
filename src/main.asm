@@ -7,6 +7,7 @@
 %include "net.asm"
 %include "settings.asm"
 %include "os.asm"
+%include "log.asm"
 %include "fixtures.asm"
 %include "theme.asm"
 %include "gfx.asm"
@@ -53,6 +54,7 @@ cli_nget:       resd 1
 cli_get:        resq 8                  ; --net-get paths (UTF-16)
 cli_type_client: resq 1
 cli_type_port:  resq 1
+cli_crash:      resd 1
 cli_banner:     resq 1
 cli_banner_btn: resq 1
 cli_http_meth:  resq 1
@@ -90,6 +92,7 @@ WSTR a_netget, "--net-get"
 WSTR a_tclient, "--type-client"
 WSTR a_tport, "--type-port"
 WSTR a_banner, "--banner"
+WSTR a_crash, "--crash-test"
 WSTR a_bbtn, "--banner-button"
 WSTR a_hmeth, "--http-method"
 WSTR a_hbody, "--http-body"
@@ -124,6 +127,7 @@ ZSTR d_net3, "net_3="
 ZSTR d_pending, "net_pending="
 ZSTR d_banner, "banner="
 ZSTR d_client, "client_id="
+ZSTR l_exit, "exit"
 WSTR a_act, "--act"
 WSTR a_dump, "--dump"
 
@@ -260,6 +264,13 @@ PROC parse_cli, 4
         mov     dword [cli_dump], 1
         jmp     .next
 .a6:    mov     rcx, rbx
+        lea     rdx, [a_crash]
+        call    arg_is
+        test    eax, eax
+        jz      .a6b
+        mov     dword [cli_crash], 1
+        jmp     .next
+.a6b:   mov     rcx, rbx
         lea     rdx, [a_nobrowser]
         call    arg_is
         test    eax, eax
@@ -827,6 +838,11 @@ PROC start, 8
 .gui:   call    SetProcessDPIAware
         mov     rcx, [cli_data_dir]
         call    settings_init
+        call    single_instance_check
+        lea     rcx, [data_dir]
+        call    log_init
+        call    version_string_init
+        call    crash_install
         call    http_init
         mov     rcx, [cli_api_base]
         mov     rdx, [cli_auth_base]
@@ -913,6 +929,10 @@ PROC start, 8
         call    ShowWindow
         mov     rcx, [hwnd]
         call    UpdateWindow
+        cmp     dword [cli_crash], 0
+        je      .nocrash
+        call    crash_test_fn
+.nocrash:
         call    run_scripted_input
         mov     rcx, [cli_banner]
         test    rcx, rcx
@@ -958,7 +978,9 @@ PROC start, 8
         lea     rcx, [msg_buf]
         call    DispatchMessageW
         jmp     .loop
-.exit:  call    settings_save
+.exit:  lea     rcx, [l_exit]
+        call    log_msg
+        call    settings_save
         xor     ecx, ecx
         call    ExitProcess
         EPROC

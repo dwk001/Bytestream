@@ -78,6 +78,10 @@ WSTR w_clientid_s, "Client ID"
 WSTR w_redirect_s, "Redirect URI (add this to your Spotify app)"
 WSTR w_login_note1, "Playback needs Spotify Premium. Apps in development mode allow up to 5 listed users."
 WSTR w_login_note2, "Everything here can be changed later in Settings."
+WSTR w_diag, "Diagnostics"
+WSTR w_open_log, "Open log folder"
+WSTR w_copy_diag, "Copy diagnostics"
+WSTR w_diag_hint, "If something goes wrong, copy the diagnostics and send them with your report. Tokens are never logged."
 WSTR w_no_results, "No results"
 
 section .text
@@ -789,6 +793,49 @@ PROC page_settings, 8
         add     r12d, eax
         S       36
         add     r12d, eax
+        lea     rcx, [w_diag]
+        mov     edx, [pg_x]
+        mov     r8d, r12d
+        mov     r9d, [pg_w]
+        call    draw_section
+        mov     r12d, eax
+        SETFONT F_BODY
+        SETCOL  T_MUTED_FG
+        S       26
+        mov     ebx, eax
+        TXTL    w_diag_hint, dword [pg_x], r12d, dword [pg_w], ebx
+        add     r12d, ebx
+        S       10
+        add     r12d, eax
+        S       40
+        mov     edi, eax
+        lea     rcx, [w_open_log]
+        mov     edx, [pg_x]
+        mov     r8d, r12d
+        S       160
+        mov     r9d, eax
+        mov     outarg(5), rdi
+        mov     qword outarg(6), H_OPEN_LOG
+        mov     qword outarg(7), 0
+        mov     qword outarg(8), 1
+        call    draw_button
+        lea     rcx, [w_copy_diag]
+        S       160
+        mov     edx, [pg_x]
+        add     edx, eax
+        S       12
+        add     edx, eax
+        mov     r8d, r12d
+        S       170
+        mov     r9d, eax
+        mov     outarg(5), rdi
+        mov     qword outarg(6), H_COPY_DIAG
+        mov     qword outarg(7), 0
+        mov     qword outarg(8), 1
+        call    draw_button
+        add     r12d, edi
+        S       36
+        add     r12d, eax
         lea     rcx, [w_about]
         mov     edx, [pg_x]
         mov     r8d, r12d
@@ -799,6 +846,9 @@ PROC page_settings, 8
         SETCOL  T_MUTED_FG
         S       26
         mov     ebx, eax
+        mov     rcx, [ver_w]
+        TXT     rcx, dword [pg_x], r12d, dword [pg_w], ebx
+        add     r12d, ebx
         TXTL    w_about1, dword [pg_x], r12d, dword [pg_w], ebx
         add     r12d, ebx
         TXTL    w_about2, dword [pg_x], r12d, dword [pg_w], ebx
