@@ -62,6 +62,7 @@ WSTR w_about4, `Music, metadata and cover art come from Spotify; use "Open in Sp
 WSTR w_play, "Play"
 WSTR w_cap_playlist, "PLAYLIST"
 WSTR w_cap_album, "ALBUM"
+WSTR w_cap_artist, "ARTIST"
 WSTR w_welcome, "Welcome to ByteStream"
 WSTR w_login_sub, "Listen to your Spotify library in a fast, native player."
 WSTR w_clientid_lbl, "Spotify client ID"
@@ -516,8 +517,11 @@ PROC page_detail, 8
         SETCOL  T_MUTED_FG
         lea     rcx, [w_cap_playlist]
         cmp     dword [det_kind], KIND_ALBUM
-        jne     .cap
+        jne     .cap1
         lea     rcx, [w_cap_album]
+.cap1:  cmp     dword [det_kind], KIND_ARTIST
+        jne     .cap
+        lea     rcx, [w_cap_artist]
 .cap:   S       24
         mov     edx, r14d
         mov     r8d, r12d
@@ -633,6 +637,29 @@ PROC page_detail, 8
         S       24
         add     r12d, r13d
         add     r12d, eax
+        cmp     dword [det_kind], KIND_ARTIST
+        jne     .notartist
+        lea     rcx, [w_tab_albums]             ; an artist page: the albums as cards
+        mov     edx, [pg_x]
+        mov     r8d, r12d
+        mov     r9d, [pg_w]
+        call    draw_section
+        mov     r12d, eax
+        lea     rcx, [lst_dalbums]
+        mov     edx, r12d
+        call    draw_empty_hint
+        mov     r12d, eax
+        lea     rcx, [lst_dalbums]
+        mov     edx, SRC_DALBUMS
+        mov     r8d, [pg_x]
+        mov     r9d, r12d
+        mov     eax, [pg_w]
+        mov     outarg(5), rax
+        mov     qword outarg(6), 0
+        call    draw_cards
+        call    page_end
+        jmp     .done
+.notartist:
         cmp     qword [det_msg], 0
         je      .tracks
         SETFONT F_BODY

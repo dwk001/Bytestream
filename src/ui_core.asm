@@ -67,6 +67,7 @@ extern CreateFontIndirectW, CreateSolidBrush, SetTextColor, SetBkColor
 %define SRC_SEARCH_A  7
 %define SRC_SEARCH_P  8
 %define SRC_SEARCH_R  9
+%define SRC_DALBUMS   10                ; albums on an artist page
 
 ; ---- metrics (index into m[]); base values are at 100% scale
 %define M_SB      0

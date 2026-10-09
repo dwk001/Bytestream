@@ -10,6 +10,7 @@ lst_search_a:   resq 3
 lst_search_p:   resq 3
 lst_search_r:   resq 3
 lst_detail:     resq 3
+lst_dalbums:    resq 3                  ; albums of the open artist
 back_page:      resd 1
 focus_req:      resd 1                  ; 1 = move keyboard focus to the search box, 2 = client-id box
 
@@ -42,6 +43,8 @@ PROC app_free_search, 0
 PROC app_free_all, 0
         lea     rcx, [q_up]
         call    tracks_free
+        lea     rcx, [lst_dalbums]
+        call    cards_free
         lea     rcx, [lst_playlists]
         call    cards_free
         lea     rcx, [lst_albums]
@@ -153,6 +156,9 @@ card_list_for:
         je      .r
         lea     rax, [lst_search_r]
         cmp     ecx, SRC_SEARCH_R
+        je      .r
+        lea     rax, [lst_dalbums]
+        cmp     ecx, SRC_DALBUMS
         je      .r
         xor     eax, eax
 .r:     ret
@@ -269,8 +275,12 @@ PROC app_open_detail, 2
         mov     [det_count], eax
         lea     rcx, [lst_detail]
         call    tracks_free
+        lea     rcx, [lst_dalbums]
+        call    cards_free
         cmp     dword [g_demo], 0
         je      .real
+        cmp     dword [det_kind], KIND_ARTIST
+        je      .artist
         cmp     dword [det_kind], KIND_ALBUM
         je      .album
         lea     rcx, [fx_playlist_items]
@@ -278,6 +288,14 @@ PROC app_open_detail, 2
         lea     r8, [lst_detail]
         mov     r9d, 1
         call    parse_tracks
+        jmp     .show
+.artist: lea    rcx, [fx_saved_albums]          ; demo: an artist's albums are the sample albums
+        lea     rdx, [a_items]
+        lea     r8, [lst_dalbums]
+        mov     r9d, KIND_ALBUM
+        lea     rax, [a_album]
+        mov     outarg(5), rax
+        call    parse_cards
         jmp     .show
 .album: lea     rcx, [fx_album_tracks]
         lea     rdx, [a_items]
@@ -445,11 +463,6 @@ PROC ui_activate, 6
         call    card_at
         test    rax, rax
         jz      .done
-        cmp     dword [rax+CD_KIND], KIND_ARTIST
-        jne     .open
-        lea     rcx, [w_artist_na]
-        call    ui_toast
-        jmp     .done
 .open:  mov     rcx, rax
         mov     edx, -1
         call    app_open_detail
@@ -462,7 +475,12 @@ PROC ui_activate, 6
         call    card_at
         test    rax, rax
         jz      .done
-        mov     rcx, rax
+        cmp     dword [g_demo], 0
+        jne     .cpdemo
+        mov     rcx, [rax+CD_URI]               ; live: just play it (its tracks are not loaded yet)
+        call    real_play_context
+        jmp     .done
+.cpdemo: mov    rcx, rax
         mov     edx, -1
         call    app_open_detail
         lea     rcx, [lst_detail]
@@ -520,9 +538,14 @@ PROC ui_activate, 6
         mov     dword [scroll_main], 0
         mov     dword [detail_sel], -1
         jmp     .done
-.dplay: lea     rcx, [lst_detail]
+.dplay: cmp     dword [g_demo], 0
+        je      .dlive
+        lea     rcx, [lst_detail]
         xor     edx, edx
         call    player_play_list
+        jmp     .done
+.dlive: mov     rcx, [det_uri]                  ; live: play the album / playlist / artist as Spotify's own context
+        call    real_play_context
         jmp     .done
 .qrow:  cmp     dword [g_demo], 0
         jne     .qdemo

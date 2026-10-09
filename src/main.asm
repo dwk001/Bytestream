@@ -167,6 +167,7 @@ ZSTR d_device, "device="
 ZSTR d_pos, "position_ms="
 ZSTR d_dur, "duration_ms="
 ZSTR d_sdk, "sdk_ready="
+ZSTR d_dalb, "artist_albums="
 ZSTR d_dlg, "dialog="
 ZSTR d_dlgpub, "dialog_public="
 ZSTR d_menu, "menu_open="
@@ -1012,6 +1013,7 @@ PROC dump_state, 4
         DUMPNUM d_pos, dword [np_pos]
         DUMPNUM d_dur, dword [np_dur]
         DUMPNUM d_sdk, dword [sdk_ready]
+        DUMPNUM d_dalb, dword [lst_dalbums+LS_COUNT]
         DUMPNUM d_dlg, dword [dlg_kind]
         DUMPNUM d_dlgpub, dword [dlg_public]
         DUMPNUM d_menu, dword [menu_open]

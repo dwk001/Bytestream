@@ -104,6 +104,7 @@ ZSTR c_state, `{"cmd":"state"}`
 ZSTR b_ctx_pre, `{"context_uri":"`
 ZSTR b_ctx_mid, `","offset":{"uri":"`
 ZSTR b_ctx_end, `"}}`
+ZSTR b_ctx_close, `"}`
 ZSTR b_uris_pre, `{"uris":[`
 ZSTR b_uris_end, `]}`
 ZSTR b_quote, `"`
@@ -824,12 +825,36 @@ PROC body_add_uri, 3
 .skip:  xor     eax, eax
 .out:   EPROC
 
+; rcx = context URI (UTF-8: album, playlist or artist): plays it from the start on our device.   Bufs: body top 5
+PROC real_play_context, 6
+        test    rcx, rcx
+        jz      .out
+        cmp     byte [rcx], 0
+        je      .out
+        mov     loc(0), rcx
+        BUFZERO 5
+        lea     rcx, loc(5)
+        lea     rdx, [b_ctx_pre]
+        call    buf_append_z
+        lea     rcx, loc(5)
+        mov     rdx, loc(0)
+        call    buf_append_z
+        lea     rcx, loc(5)
+        lea     rdx, [b_ctx_close]
+        call    buf_append_z
+        mov     rcx, loc(5)
+        mov     qword loc(5), 0
+        call    audio_start
+.out:   EPROC
+
 ; The Play entry point used by every list: rcx = List* of Track, edx = index of the track to start.
 ; A playlist or album page plays its context (Spotify keeps the order, shuffle and length); anything else sends
 ; up to 100 track URIs starting at the chosen row.   Locals: 0 list, 1 index, 2 track, 3 body ptr, 4 added;  Buf top 8
 PROC real_play_list, 10
         mov     loc(0), rcx
         mov     loc(1), rdx
+        cmp     rdx, [rcx+LS_COUNT]
+        jae     .out                            ; the list is empty or still loading
         mov     rax, rdx
         imul    rax, TR_SIZE
         add     rax, [rcx+LS_PTR]

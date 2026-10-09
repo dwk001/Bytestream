@@ -23,6 +23,7 @@ H_COPY_URI, H_OPEN_DASH, H_BANNER_X = 28, 29, 30
 H_OPEN_LOG, H_COPY_DIAG, H_CANCEL_SIGNIN = 32, 33, 34
 H_TEST_AUDIO, H_LIKE, H_MENU_ITEM, H_MENU_BG = 36, 37, 38, 39
 H_NEW_PL, H_DET_EDIT, H_DET_DELETE, H_DLG_BG, H_DLG_OK, H_DLG_CANCEL, H_DLG_PUBLIC = 40, 41, 42, 43, 44, 45, 46
+SRC_SEARCH_R = 9
 H_QUEUE_ROW = 22
 H_SIGNOUT = 18
 SRC_RECENT, SRC_LIKED, SRC_PLAYLISTS, SRC_ALBUMS = 1, 2, 5, 6
@@ -715,7 +716,9 @@ def main():
                      "--edge-path", "x:\\fake\\msedge.exe",
                      "--act", f"{H_NAV},{PAGE_SETTINGS}", "--act", f"{H_TEST_AUDIO},0",
                      "--act-late", f"{H_PLAY},0", "--act-late", f"{H_NEXT},0", "--act-late", f"{H_PREV},0",
-                     "--act-late", f"{H_SHUFFLE},0", "--act-late", f"{H_REPEAT},0", "--act-late", f"{H_TEST_AUDIO},0"], d)
+                     "--act-late", f"{H_SHUFFLE},0", "--act-late", f"{H_REPEAT},0", "--act-late", f"{H_TEST_AUDIO},0",
+                     "--act-late", f"{H_NAV},{PAGE_HOME}", "--act-late", f"{H_CARD},{arg(SRC_PLAYLISTS, 0)}",
+                     "--act-late", f"{H_DETAIL_PLAY},0"], d)
         page = None
         try:
             line, seen = read_until(app, "edge-launch:")
@@ -770,6 +773,16 @@ def main():
                 page.post({"type": "go"})
                 check(wait_for(lambda: len(plays()) == 2), "audio: pressing play again sends a second request straight away")
                 time.sleep(0.8)
+                S.play_reply = None
+                S.log.clear()
+                for _ in range(3):                    # open a playlist page, press its Play button
+                    page.post({"type": "go"})
+                    time.sleep(0.5)
+                ctx_plays = lambda: [e for e in S.log if e["method"] == "PUT" and e["path"].startswith("/v1/me/player/play")]
+                check(wait_for(lambda: len(ctx_plays()) == 1), "audio: a page's Play button sends the whole playlist as a context", str([(e['method'], e['path']) for e in S.log]))
+                if ctx_plays():
+                    check(json.loads(ctx_plays()[0]["body"]) == {"context_uri": "spotify:playlist:pl000"},
+                          "audio: the play request names the playlist (Spotify keeps its order and length)", ctx_plays()[0]["body"])
                 page.post({"type": "state", "paused": True, "position": 99000, "duration": 215000, "shuffle": False, "repeat": 0,
                            "track": {"uri": "spotify:track:2222222222222222222222", "name": "Second \u00e9", "artists": ["Solo"], "album": "Other",
                                      "images": []}})
@@ -889,6 +902,9 @@ def main():
         st, paths = live(["--page", str(PAGE_SEARCH), "--search", "a&b \u00e9"])
         check(any(p.startswith("/v1/search?q=a%26b%20%C3%A9&") for p in paths), "search: the query is percent-encoded as UTF-8", str(paths))
 
+        st, paths = live(["--size", "1280x2400", "--search", "tide", "--act", f"{H_NAV},{PAGE_SEARCH}", "--act", f"{H_CARD},{arg(SRC_SEARCH_R, 0)}"])
+        check(st.get("page") == str(PAGE_DETAIL) and st.get("artist_albums") == "8" and any(p.startswith("/v1/artists/ar0/albums?include_groups=album,single") for p in paths),
+              "artist page: lists the artist's albums (GET /artists/{id}/albums)", str(st) + str(paths[-3:]))
         S.real_images = True
         st, paths = live([], reset=False)
         imgs = [e for e in S.log if e["path"].startswith("/img/")]

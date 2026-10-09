@@ -43,6 +43,8 @@ ZSTR lp_pl_pre, "/v1/playlists/"
 ZSTR lp_pl_post, "/items?limit=100"
 ZSTR lp_al_pre, "/v1/albums/"
 ZSTR lp_al_post, "/tracks?limit=50"
+ZSTR lp_ar_pre, "/v1/artists/"
+ZSTR lp_ar_post, "/albums?include_groups=album,single&limit=50"
 ZSTR lp_search_pre, "/v1/search?q="
 ZSTR lp_search_post, "&type=track,album,playlist,artist&limit=10"
 ZSTR lp_v1, "/v1/"
@@ -338,6 +340,8 @@ PROC det_reload, 0
         jne     .out
         lea     rcx, [lst_detail]
         call    tracks_free
+        lea     rcx, [lst_dalbums]
+        call    cards_free
         call    real_load_detail
 .out:   EPROC
 
@@ -347,7 +351,9 @@ PROC det_request, 4
         cmp     eax, KIND_PLAYLIST
         je      .go
         cmp     eax, KIND_ALBUM
-        jne     .out                            ; artists have no page yet
+        je      .go
+        cmp     eax, KIND_ARTIST
+        jne     .out
 .go:    mov     rcx, [det_id]
         test    rcx, rcx
         jz      .out
@@ -357,8 +363,11 @@ PROC det_request, 4
         lea     rcx, loc(3)
         lea     rdx, [lp_pl_pre]
         cmp     dword [det_kind], KIND_ALBUM
-        jne     .pre
+        jne     .pre1
         lea     rdx, [lp_al_pre]
+.pre1:  cmp     dword [det_kind], KIND_ARTIST
+        jne     .pre
+        lea     rdx, [lp_ar_pre]
 .pre:   call    buf_append_z
         lea     rcx, loc(3)
         mov     rdx, [det_id]
@@ -366,8 +375,11 @@ PROC det_request, 4
         lea     rcx, loc(3)
         lea     rdx, [lp_pl_post]
         cmp     dword [det_kind], KIND_ALBUM
-        jne     .post
+        jne     .post1
         lea     rdx, [lp_al_post]
+.post1: cmp     dword [det_kind], KIND_ARTIST
+        jne     .post
+        lea     rdx, [lp_ar_post]
 .post:  call    buf_append_z
         mov     dword [det_busy], 1
         mov     rcx, loc(3)
@@ -417,7 +429,17 @@ PROC h_detail, 4
 .setmsg:
         mov     [det_msg], rcx
         jmp     .paint
-.ok:    mov     rcx, [rsi+JB_RESP]
+.ok:    cmp     dword [det_kind], KIND_ARTIST
+        jne     .tracks
+        mov     rcx, [rsi+JB_RESP]              ; an artist page lists albums, not tracks
+        lea     rdx, [a_items]
+        lea     r8, [lst_dalbums]
+        mov     r9d, KIND_ALBUM
+        mov     qword outarg(5), 0
+        call    parse_cards
+        jmp     .paging
+.tracks: mov    rsi, loc(0)
+        mov     rcx, [rsi+JB_RESP]
         lea     rdx, [a_items]
         lea     r8, [lst_detail]
         mov     r9d, 1
@@ -449,7 +471,9 @@ PROC h_detail, 4
         call    mem_free
         jmp     .empty
 .keep:  mov     [det_next], rax
-.empty: cmp     qword [lst_detail+LS_COUNT], 0
+.empty: cmp     dword [det_kind], KIND_ARTIST
+        je      .paint
+        cmp     qword [lst_detail+LS_COUNT], 0
         jne     .paint
         lea     rcx, [w_det_empty]
         cmp     dword [det_total], 0

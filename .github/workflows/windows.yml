@@ -7,6 +7,7 @@ on:
 jobs:
   build-and-test:
     runs-on: windows-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -37,6 +38,7 @@ jobs:
 
       - name: Test (runs the real .exe on Windows)
         shell: pwsh
+        timeout-minutes: 30
         run: python tests/run_tests.py
 
       - name: Render screenshots
@@ -55,7 +57,8 @@ jobs:
             $args = @()
             if ($s[1] -ne "") { $args += $s[1].Split(" ") }
             $args += @("--data-dir", "$env:RUNNER_TEMP\bs-$($s[0])", "--screenshot", "shots\$($s[0]).bmp")
-            Start-Process -FilePath $exe -ArgumentList $args -Wait -NoNewWindow
+            $p = Start-Process -FilePath $exe -ArgumentList $args -PassThru -NoNewWindow
+            if (-not $p.WaitForExit(60000)) { $p.Kill(); Write-Host "screenshot run $($s[0]) hung and was killed" }
             python tools/bmp2png.py "shots\$($s[0]).bmp" "shots\$($s[0]).png"
           }
 

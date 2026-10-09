@@ -279,7 +279,7 @@ class Handler(BaseHTTPRequestHandler):
             return False
         routes = ("/v1/me/playlists", "/v1/me/tracks", "/v1/me/albums", "/v1/me/player/recently-played", "/v1/search",
                   "/v1/me/library", "/v1/me/library/contains", "/v1/me/player/queue")
-        is_lib = path in routes or re.fullmatch(r"/v1/(playlists|albums)/[^/]+/(items|tracks)", path) or path.startswith("/img/")
+        is_lib = path in routes or re.fullmatch(r"/v1/artists/[^/]+/albums", path) or re.fullmatch(r"/v1/(playlists|albums)/[^/]+/(items|tracks)", path) or path.startswith("/img/")
         if not is_lib:
             return False
         for prefix, secs in list(STATE.delay.items()):
@@ -336,6 +336,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json_out({"items": items, "next": None})
         elif path == "/v1/search":
             self._json_out(fixture("search.json"))
+        elif path.startswith("/v1/artists/"):
+            self._json_out(self._paged(u, q, [a["album"] for a in fixture("saved_albums.json")["items"]]))
         else:
             kind, ident = path.split("/")[2], path.split("/")[3]
             if kind == "playlists":
