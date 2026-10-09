@@ -1,0 +1,409 @@
+; selftest.asm - `sonora.exe --selftest` exercises the pure-logic routines and prints one line per check.
+
+section .bss
+g_fail:         resq 1
+g_pass:         resq 1
+
+section .data
+st_ok:          db "ok   ", 0
+st_bad:         db "FAIL ", 0
+st_nl:          db 10, 0
+st_sum:         db "selftest done", 10, 0
+
+section .text
+
+; ecx = condition (non-zero = pass), rdx = name
+PROC t_check, 1
+        mov     loc(0), rdx
+        test    ecx, ecx
+        jz      .bad
+        inc     qword [g_pass]
+        lea     rcx, [st_ok]
+        call    out_z
+        jmp     .nm
+.bad:   inc     qword [g_fail]
+        lea     rcx, [st_bad]
+        call    out_z
+.nm:    mov     rcx, loc(0)
+        call    out_z
+        lea     rcx, [st_nl]
+        call    out_z
+        EPROC
+
+; rcx = actual z-string (not freed), rdx = expected z-string, r8 = name
+PROC t_str, 1
+        mov     loc(0), r8
+        call    u8_eq
+        mov     ecx, eax
+        mov     rdx, loc(0)
+        call    t_check
+        EPROC
+
+; rcx = actual integer, rdx = expected, r8 = name
+PROC t_int, 1
+        mov     loc(0), r8
+        xor     eax, eax
+        cmp     rcx, rdx
+        sete    al
+        mov     ecx, eax
+        mov     rdx, loc(0)
+        call    t_check
+        EPROC
+
+%macro TNAME 2
+%1:     db %2, 0
+%endmacro
+
+section .data
+j_doc:  db '{"a":1,"b":{"c":[10,20,{"d":"hi\nthere é 🎵 \"q\" \\ \/"}]},"s":"x","t":true,"f":false,"n":null,"neg":-42,"e":{},"ea":[]}', 0
+j_exp:  db 'hi', 10, 'there ', 0xC3, 0xA9, ' ', 0xF0, 0x9F, 0x8E, 0xB5, ' "q" \ /', 0
+j_ws:   db 10, 9, ' { "k" : [ 1 , 2 ] }  ', 0
+p_a:    db "a", 0
+p_b_c_1: db "b.c.1", 0
+p_b_c_2_d: db "b.c.2.d", 0
+p_b_c:  db "b.c", 0
+p_s:    db "s", 0
+p_t:    db "t", 0
+p_f:    db "f", 0
+p_neg:  db "neg", 0
+p_zz:   db "zz", 0
+p_b_c_9: db "b.c.9", 0
+p_n:    db "n", 0
+p_ea:   db "ea", 0
+p_k_1:  db "k.1", 0
+p_k:    db "k", 0
+x_x:    db "x", 0
+t_a:    db "json: member a", 0
+t_arr:  db "json: array index", 0
+t_deep: db "json: nested string with escapes, \u, surrogates", 0
+t_cnt:  db "json: count", 0
+t_miss: db "json: missing key -> 0", 0
+t_oor:  db "json: out of range -> 0", 0
+t_str1: db "json: simple string", 0
+t_true: db "json: true", 0
+t_false: db "json: false", 0
+t_neg:  db "json: negative int", 0
+t_null: db "json: null decodes as empty string", 0
+t_empty: db "json: empty array count", 0
+t_wsp:  db "json: whitespace tolerance", 0
+t_b64a: db "b64url: abc", 0
+t_b64b: db "b64url: no padding / url alphabet", 0
+t_b64c: db "b64url: 1 and 2 byte tails", 0
+t_time: db "fmt_time: 1:05", 0
+t_time2: db "fmt_time: 0:00", 0
+t_time3: db "fmt_time: 61:01", 0
+t_enc:  db "urlenc: reserved characters", 0
+t_rt:   db "utf8<->utf16 round trip", 0
+t_buf:  db "buf: append across growth", 0
+t_u64:  db "u64 formatting", 0
+b_abc:  db "abc", 0
+b_exp1: db "YWJj", 0
+b_exp2: db "-_8", 0
+b_exp3: db "YQ", 0
+b_exp4: db "YWI", 0
+u_in:   db "a b&c/d=é~", 0
+u_exp:  db "a%20b%26c%2Fd%3D%C3%A9~", 0
+u_rt:   db "Zażółć gęślą jaźń ", 0xE2, 0x99, 0xAA, 0
+
+section .bss
+st_tmp:         resb 256
+st_buf:         resq 3
+
+section .text
+PROC selftest, 8
+        ; ---- json
+        lea     rcx, [j_doc]
+        lea     rdx, [p_a]
+        call    json_path
+        mov     rcx, rax
+        call    json_int
+        mov     rcx, rax
+        mov     edx, 1
+        lea     r8, [t_a]
+        call    t_int
+
+        lea     rcx, [j_doc]
+        lea     rdx, [p_b_c_1]
+        call    json_path
+        mov     rcx, rax
+        call    json_int
+        mov     rcx, rax
+        mov     edx, 20
+        lea     r8, [t_arr]
+        call    t_int
+
+        lea     rcx, [j_doc]
+        lea     rdx, [p_b_c_2_d]
+        call    json_path
+        mov     rcx, rax
+        call    json_str_u8
+        mov     loc(0), rax
+        mov     rcx, rax
+        lea     rdx, [j_exp]
+        lea     r8, [t_deep]
+        call    t_str
+        mov     rcx, loc(0)
+        call    mem_free
+
+        lea     rcx, [j_doc]
+        lea     rdx, [p_b_c]
+        call    json_path
+        mov     rcx, rax
+        call    json_count
+        mov     rcx, rax
+        mov     edx, 3
+        lea     r8, [t_cnt]
+        call    t_int
+
+        lea     rcx, [j_doc]
+        lea     rdx, [p_zz]
+        call    json_path
+        mov     rcx, rax
+        xor     edx, edx
+        lea     r8, [t_miss]
+        call    t_int
+
+        lea     rcx, [j_doc]
+        lea     rdx, [p_b_c_9]
+        call    json_path
+        mov     rcx, rax
+        xor     edx, edx
+        lea     r8, [t_oor]
+        call    t_int
+
+        lea     rcx, [j_doc]
+        lea     rdx, [p_s]
+        call    json_path
+        mov     rcx, rax
+        call    json_str_u8
+        mov     loc(0), rax
+        mov     rcx, rax
+        lea     rdx, [x_x]
+        lea     r8, [t_str1]
+        call    t_str
+        mov     rcx, loc(0)
+        call    mem_free
+
+        lea     rcx, [j_doc]
+        lea     rdx, [p_t]
+        call    json_path
+        mov     rcx, rax
+        call    json_bool
+        mov     ecx, eax
+        lea     rdx, [t_true]
+        call    t_check
+
+        lea     rcx, [j_doc]
+        lea     rdx, [p_f]
+        call    json_path
+        mov     rcx, rax
+        call    json_bool
+        xor     ecx, ecx
+        test    eax, eax
+        sete    cl
+        lea     rdx, [t_false]
+        call    t_check
+
+        lea     rcx, [j_doc]
+        lea     rdx, [p_neg]
+        call    json_path
+        mov     rcx, rax
+        call    json_int
+        mov     rcx, rax
+        mov     rdx, -42
+        lea     r8, [t_neg]
+        call    t_int
+
+        lea     rcx, [j_doc]
+        lea     rdx, [p_n]
+        call    json_path
+        mov     rcx, rax
+        call    json_str_u8
+        mov     loc(0), rax
+        mov     rcx, rax
+        lea     rdx, [st_nl+1]          ; empty string
+        lea     r8, [t_null]
+        call    t_str
+        mov     rcx, loc(0)
+        call    mem_free
+
+        lea     rcx, [j_doc]
+        lea     rdx, [p_ea]
+        call    json_path
+        mov     rcx, rax
+        call    json_count
+        mov     rcx, rax
+        xor     edx, edx
+        lea     r8, [t_empty]
+        call    t_int
+
+        lea     rcx, [j_ws]
+        lea     rdx, [p_k_1]
+        call    json_path
+        mov     rcx, rax
+        call    json_int
+        mov     rcx, rax
+        mov     edx, 2
+        lea     r8, [t_wsp]
+        call    t_int
+
+        ; ---- base64url
+        lea     rcx, [b_abc]
+        mov     edx, 3
+        lea     r8, [st_tmp]
+        call    b64url_enc
+        lea     r11, [st_tmp]
+        mov     byte [r11+rax], 0
+        lea     rcx, [st_tmp]
+        lea     rdx, [b_exp1]
+        lea     r8, [t_b64a]
+        call    t_str
+
+        mov     byte [st_tmp+100], 0xFB
+        mov     byte [st_tmp+101], 0xFF
+        lea     rcx, [st_tmp+100]
+        mov     edx, 2
+        lea     r8, [st_tmp]
+        call    b64url_enc
+        lea     r11, [st_tmp]
+        mov     byte [r11+rax], 0
+        lea     rcx, [st_tmp]
+        lea     rdx, [b_exp2]
+        lea     r8, [t_b64b]
+        call    t_str
+
+        lea     rcx, [b_abc]
+        mov     edx, 1
+        lea     r8, [st_tmp]
+        call    b64url_enc
+        lea     r11, [st_tmp]
+        mov     byte [r11+rax], 0
+        lea     rcx, [st_tmp]
+        lea     rdx, [b_exp3]
+        lea     r8, [t_b64c]
+        call    t_str
+        lea     rcx, [b_abc]
+        mov     edx, 2
+        lea     r8, [st_tmp]
+        call    b64url_enc
+        lea     r11, [st_tmp]
+        mov     byte [r11+rax], 0
+        lea     rcx, [st_tmp]
+        lea     rdx, [b_exp4]
+        lea     r8, [t_b64c]
+        call    t_str
+
+        ; ---- time formatting (wide -> utf8 for the comparison)
+        lea     rcx, [st_tmp+128]
+        mov     edx, 65000
+        call    w_fmt_time
+        lea     rcx, [st_tmp+128]
+        mov     rdx, -1
+        call    w_to_u8
+        mov     loc(0), rax
+        mov     rcx, rax
+        lea     rdx, [s_105]
+        lea     r8, [t_time]
+        call    t_str
+        mov     rcx, loc(0)
+        call    mem_free
+
+        lea     rcx, [st_tmp+128]
+        xor     edx, edx
+        call    w_fmt_time
+        lea     rcx, [st_tmp+128]
+        mov     rdx, -1
+        call    w_to_u8
+        mov     loc(0), rax
+        mov     rcx, rax
+        lea     rdx, [s_000]
+        lea     r8, [t_time2]
+        call    t_str
+        mov     rcx, loc(0)
+        call    mem_free
+
+        lea     rcx, [st_tmp+128]
+        mov     edx, 3661000
+        call    w_fmt_time
+        lea     rcx, [st_tmp+128]
+        mov     rdx, -1
+        call    w_to_u8
+        mov     loc(0), rax
+        mov     rcx, rax
+        lea     rdx, [s_6101]
+        lea     r8, [t_time3]
+        call    t_str
+        mov     rcx, loc(0)
+        call    mem_free
+
+        ; ---- url encoding via Buf
+        lea     rcx, [st_buf]
+        call    buf_free
+        lea     rcx, [u_in]
+        call    u8_len
+        mov     r8, rax
+        lea     rcx, [st_buf]
+        lea     rdx, [u_in]
+        call    buf_append_urlenc
+        mov     rcx, [st_buf]
+        lea     rdx, [u_exp]
+        lea     r8, [t_enc]
+        call    t_str
+
+        ; ---- utf8 <-> utf16 round trip
+        lea     rcx, [u_rt]
+        mov     rdx, -1
+        call    u8_to_w
+        mov     loc(1), rax
+        mov     rcx, rax
+        mov     rdx, -1
+        call    w_to_u8
+        mov     loc(2), rax
+        mov     rcx, rax
+        lea     rdx, [u_rt]
+        lea     r8, [t_rt]
+        call    t_str
+        mov     rcx, loc(1)
+        call    mem_free
+        mov     rcx, loc(2)
+        call    mem_free
+
+        ; ---- buffer growth: append 1000 numbers
+        lea     rcx, [st_buf]
+        call    buf_free
+        xor     ebx, ebx
+.bl:    lea     rcx, [st_buf]
+        mov     rdx, rbx
+        call    buf_append_u64
+        lea     rcx, [st_buf]
+        mov     edx, ','
+        call    buf_append_char
+        inc     ebx
+        cmp     ebx, 1000
+        jb      .bl
+        mov     rax, [st_buf+BUF_LEN]
+        xor     ecx, ecx
+        cmp     rax, 3890               ; 10*1 + 90*2 + 900*3 digits + 1000 commas
+        sete    cl
+        lea     rdx, [t_buf]
+        call    t_check
+
+        lea     rcx, [st_tmp]
+        mov     rdx, 18446744073709551615
+        call    u8_put_u64
+        mov     byte [rax], 0
+        lea     rcx, [st_tmp]
+        lea     rdx, [s_u64max]
+        lea     r8, [t_u64]
+        call    t_str
+
+        lea     rcx, [st_sum]
+        call    out_z
+        mov     rax, [g_fail]
+        EPROC
+
+section .data
+s_105:  db "1:05", 0
+s_000:  db "0:00", 0
+s_6101: db "61:01", 0
+s_u64max: db "18446744073709551615", 0
