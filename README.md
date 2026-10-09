@@ -30,6 +30,20 @@ Windows may show *SmartScreen* ("Windows protected your PC") the first time, bec
 (*More info > Run anyway*). Settings > Diagnostics has *Test audio*, *Open log folder* and *Copy diagnostics*
 if anything misbehaves; the log never contains tokens.
 
+## Checking it on your PC (nothing below can be verified without a real Spotify account)
+
+1. Sign in; Home should fill with your playlists and recently played tracks within a few seconds.
+2. Settings > Diagnostics > **Test audio** should play a short test track (the first start of Edge takes a few
+   seconds). If it does not, the banner says why; otherwise *Copy diagnostics* and send them along.
+3. Click a track: it plays, the seek bar moves, pause / next / previous / volume / shuffle / repeat work.
+4. Click a heart (it turns green and the track appears in Liked Songs on Spotify), right-click a track (Add to
+   queue, Add to playlist ...), press **+** in the sidebar to create a playlist.
+5. Close ByteStream: the helper Edge window disappears with it.
+
+Known limits: Spotify's API does not expose podcasts-only features, artist top tracks, radio or lyrics; playlists you
+only follow show metadata but no tracks (Spotify's 2026 API change); a development-mode app serves at most five
+listed users.
+
 ## How playback works, and why it is allowed
 
 Spotify audio is DRM-protected. ByteStream never decodes or decrypts it. Playback uses Spotify's **official
