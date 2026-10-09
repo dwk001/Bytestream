@@ -6,7 +6,7 @@
 ; frame chain, all as RVAs, so a report can be matched against build/bytestream.map (tools/crashmap.py).
 
 extern SetUnhandledExceptionFilter, MoveFileExW, GetLocalTime, MessageBoxW, GetModuleHandleW
-extern RtlGetVersion, CreateMutexW, FindWindowW, SetForegroundWindow, GetLastError
+extern RtlGetVersion, CreateMutexW, FindWindowW, SetForegroundWindow, GetLastError, GetProcAddress
 
 %define LOG_ROTATE_BYTES  524288
 
@@ -26,6 +26,9 @@ st_now:         resw 8
 section .data
 ZSTR build_id, BUILD_ID
 ZSTR app_version, "0.1"
+WSTR w_kernel32_dll, "kernel32.dll"
+a_get_policy: db "GetProcessUserModeExceptionPolicy", 0
+a_set_policy: db "SetProcessUserModeExceptionPolicy", 0
 WSTR w_log_name, "\bytestream.log"
 WSTR w_log_old, "\bytestream.old.log"
 WSTR w_crash_title, "ByteStream crashed"
@@ -302,10 +305,37 @@ PROC log_num, 6
         EPROC
 
 ; ---------------------------------------------------------------- crash reporter
-PROC crash_install, 0
+; 64-bit Windows silently swallows an exception raised inside a window procedure (the kernel-callback boundary
+; eats it), so a fault while painting would leave a blank window and no report.  Clearing
+; PROCESS_CALLBACK_FILTER_ENABLED lets those exceptions reach the filter.  The two functions are looked up at run
+; time because Windows does not document them; if they are missing nothing changes.
+PROC crash_install, 2
         lea     rcx, [crash_filter]
         call    SetUnhandledExceptionFilter
-        EPROC
+        lea     rcx, [w_kernel32_dll]
+        call    GetModuleHandleW
+        test    rax, rax
+        jz      .out
+        mov     rbx, rax
+        mov     rcx, rbx
+        lea     rdx, [a_get_policy]
+        call    GetProcAddress
+        mov     rsi, rax
+        mov     rcx, rbx
+        lea     rdx, [a_set_policy]
+        call    GetProcAddress
+        test    rax, rax
+        jz      .out
+        test    rsi, rsi
+        jz      .out
+        mov     rdi, rax
+        lea     rcx, loc(0)
+        mov     dword [rcx], 0
+        call    rsi                             ; GetProcessUserModeExceptionPolicy(&flags)
+        mov     ecx, dword loc(0)
+        and     ecx, ~1                         ; PROCESS_CALLBACK_FILTER_ENABLED
+        call    rdi                             ; SetProcessUserModeExceptionPolicy(flags)
+.out:   EPROC
 
 ; LONG WINAPI crash_filter(EXCEPTION_POINTERS* rcx)
 PROC crash_filter, 8
