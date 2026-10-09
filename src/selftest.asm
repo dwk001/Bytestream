@@ -1,4 +1,4 @@
-; selftest.asm - `sonora.exe --selftest` exercises the pure-logic routines and prints one line per check.
+; selftest.asm - `bytestream.exe --selftest` exercises the pure-logic routines and prints one line per check.
 
 section .bss
 g_fail:         resq 1
@@ -49,6 +49,29 @@ PROC t_int, 1
         mov     rdx, loc(0)
         call    t_check
         EPROC
+
+
+; rcx = actual UTF-16 string, rdx = expected UTF-8 z-string, r8 = name
+PROC t_wstr, 2
+        mov     loc(0), r8
+        mov     loc(1), rdx
+        mov     rdx, -1
+        call    w_to_u8
+        mov     rbx, rax
+        mov     rcx, rax
+        mov     rdx, loc(1)
+        mov     r8, loc(0)
+        call    t_str
+        mov     rcx, rbx
+        call    mem_free
+        EPROC
+
+; rcx = List*, edx = element index, esize = r8d -> rax = element pointer
+list_at:
+        mov     rax, rdx
+        imul    rax, r8
+        add     rax, [rcx+LS_PTR]
+        ret
 
 %macro TNAME 2
 %1:     db %2, 0
@@ -104,6 +127,62 @@ b_exp4: db "YWI", 0
 u_in:   db "a b&c/d=é~", 0
 u_exp:  db "a%20b%26c%2Fd%3D%C3%A9~", 0
 u_rt:   db "Zażółć gęślą jaźń ", 0xE2, 0x99, 0xAA, 0
+
+
+section .data
+ZSTR m_items, "items"
+ZSTR m_albums_items, "albums.items"
+ZSTR m_tracks_items, "tracks.items"
+ZSTR m_artists_items, "artists.items"
+ZSTR m_playlists_items, "playlists.items"
+ZSTR m_queue, "queue"
+ZSTR m_wrap_album, "album"
+ZSTR m_e1, "Daily Mix 1"
+ZSTR m_e2, "By Demo Listener"
+ZSTR m_e3, "Midnight Lanterns"
+ZSTR m_e4, "Neon Harbor, Saffron Static"
+ZSTR m_e5, "Paper Honey"
+ZSTR m_e6, "Glass Orchard"
+ZSTR m_e7, "City of Lanterns"
+ZSTR m_e8, "demo:2"
+ZSTR m_e9, "Artist"
+ZSTR m_e10, "Neon Harbor"
+ZSTR m_e11, "spotify:track:tr0001"
+ZSTR m_e12, "spotify:playlist:pl000"
+ZSTR m_e13, "demo:20"
+ZSTR m_e14, "demo:1"
+ZSTR tm_pl_count, "model: playlists parsed (10)"
+ZSTR tm_pl_name, "model: playlist name"
+ZSTR tm_pl_sub, "model: playlist owner line"
+ZSTR tm_pl_total, "model: playlist item total (items.total)"
+ZSTR tm_pl_uri, "model: playlist uri"
+ZSTR tm_pl_img, "model: playlist medium image"
+ZSTR tm_it_count, "model: playlist items parsed via item wrapper (24)"
+ZSTR tm_it_title, "model: track title"
+ZSTR tm_it_artists, "model: two artists joined"
+ZSTR tm_it_title2, "model: second track title"
+ZSTR tm_it_artist2, "model: single artist"
+ZSTR tm_it_album, "model: album name"
+ZSTR tm_it_dur, "model: duration"
+ZSTR tm_it_uri, "model: track uri"
+ZSTR tm_it_img, "model: smallest cover is last image"
+ZSTR tm_it_imgl, "model: largest cover is first image"
+ZSTR tm_sv_count, "model: saved tracks via track wrapper (20)"
+ZSTR tm_al_count, "model: saved albums (8)"
+ZSTR tm_al_sub, "model: album artists line"
+ZSTR tm_al_total, "model: album total_tracks"
+ZSTR tm_s_tracks, "model: search tracks (10)"
+ZSTR tm_s_albums, "model: search albums (4)"
+ZSTR tm_s_artists, "model: search artists (4)"
+ZSTR tm_s_artist_sub, "model: artist card sub line"
+ZSTR tm_s_pl, "model: search playlists skip null (3)"
+ZSTR tm_q_count, "model: queue (12)"
+ZSTR tm_free, "model: free lists"
+
+section .bss
+l_a:            resq 3
+l_b:            resq 3
+l_c:            resq 3
 
 section .bss
 st_tmp:         resb 256
@@ -396,6 +475,216 @@ PROC selftest, 8
         lea     rdx, [s_u64max]
         lea     r8, [t_u64]
         call    t_str
+
+
+        ; ---- model parsers over the embedded fixtures
+        lea     rcx, [fx_playlists]
+        lea     rdx, [m_items]
+        lea     r8, [l_a]
+        mov     r9d, KIND_PLAYLIST
+        mov     qword outarg(5), 0
+        call    parse_cards
+        mov     rcx, [l_a+LS_COUNT]
+        mov     edx, 10
+        lea     r8, [tm_pl_count]
+        call    t_int
+        lea     rcx, [l_a]
+        xor     edx, edx
+        mov     r8d, CD_SIZE
+        call    list_at
+        mov     rbx, rax
+        mov     rcx, [rbx+CD_NAME]
+        lea     rdx, [m_e1]
+        lea     r8, [tm_pl_name]
+        call    t_wstr
+        mov     rcx, [rbx+CD_SUB]
+        lea     rdx, [m_e2]
+        lea     r8, [tm_pl_sub]
+        call    t_wstr
+        mov     ecx, [rbx+CD_COUNT]
+        mov     edx, 12
+        lea     r8, [tm_pl_total]
+        call    t_int
+        mov     rcx, [rbx+CD_URI]
+        lea     rdx, [m_e12]
+        lea     r8, [tm_pl_uri]
+        call    t_str
+        mov     rcx, [rbx+CD_IMG_M]
+        lea     rdx, [m_e13]
+        lea     r8, [tm_pl_img]
+        call    t_str
+        lea     rcx, [l_a]
+        call    cards_free
+
+        lea     rcx, [fx_playlist_items]
+        lea     rdx, [m_items]
+        lea     r8, [l_b]
+        mov     r9d, 1
+        call    parse_tracks
+        mov     rcx, [l_b+LS_COUNT]
+        mov     edx, 24
+        lea     r8, [tm_it_count]
+        call    t_int
+        lea     rcx, [l_b]
+        xor     edx, edx
+        mov     r8d, TR_SIZE
+        call    list_at
+        mov     rbx, rax
+        mov     rcx, [rbx+TR_TITLE]
+        lea     rdx, [m_e3]
+        lea     r8, [tm_it_title]
+        call    t_wstr
+        mov     rcx, [rbx+TR_ARTIST]
+        lea     rdx, [m_e4]
+        lea     r8, [tm_it_artists]
+        call    t_wstr
+        lea     rcx, [l_b]
+        mov     edx, 1
+        mov     r8d, TR_SIZE
+        call    list_at
+        mov     rbx, rax
+        mov     rcx, [rbx+TR_TITLE]
+        lea     rdx, [m_e5]
+        lea     r8, [tm_it_title2]
+        call    t_wstr
+        mov     rcx, [rbx+TR_ARTIST]
+        lea     rdx, [m_e6]
+        lea     r8, [tm_it_artist2]
+        call    t_wstr
+        mov     rcx, [rbx+TR_ALBUM]
+        lea     rdx, [m_e7]
+        lea     r8, [tm_it_album]
+        call    t_wstr
+        mov     ecx, [rbx+TR_DUR]
+        mov     edx, 157919
+        lea     r8, [tm_it_dur]
+        call    t_int
+        mov     rcx, [rbx+TR_URI]
+        lea     rdx, [m_e11]
+        lea     r8, [tm_it_uri]
+        call    t_str
+        mov     rcx, [rbx+TR_IMG_S]
+        lea     rdx, [m_e8]
+        lea     r8, [tm_it_img]
+        call    t_str
+        mov     rcx, [rbx+TR_IMG_L]
+        lea     rdx, [m_e8]
+        lea     r8, [tm_it_imgl]
+        call    t_str
+        lea     rcx, [l_b]
+        call    tracks_free
+
+        lea     rcx, [fx_saved_tracks]
+        lea     rdx, [m_items]
+        lea     r8, [l_b]
+        mov     r9d, 1
+        call    parse_tracks
+        mov     rcx, [l_b+LS_COUNT]
+        mov     edx, 20
+        lea     r8, [tm_sv_count]
+        call    t_int
+        lea     rcx, [l_b]
+        call    tracks_free
+
+        lea     rcx, [fx_saved_albums]
+        lea     rdx, [m_items]
+        lea     r8, [l_a]
+        mov     r9d, KIND_ALBUM
+        lea     rax, [m_wrap_album]
+        mov     outarg(5), rax
+        call    parse_cards
+        mov     rcx, [l_a+LS_COUNT]
+        mov     edx, 8
+        lea     r8, [tm_al_count]
+        call    t_int
+        lea     rcx, [l_a]
+        xor     edx, edx
+        mov     r8d, CD_SIZE
+        call    list_at
+        mov     rbx, rax
+        mov     rcx, [rbx+CD_SUB]
+        lea     rdx, [m_e10]
+        lea     r8, [tm_al_sub]
+        call    t_wstr
+        mov     ecx, [rbx+CD_COUNT]
+        mov     edx, 8
+        lea     r8, [tm_al_total]
+        call    t_int
+        lea     rcx, [l_a]
+        call    cards_free
+
+        lea     rcx, [fx_search]
+        lea     rdx, [m_tracks_items]
+        lea     r8, [l_b]
+        xor     r9d, r9d
+        call    parse_tracks
+        mov     rcx, [l_b+LS_COUNT]
+        mov     edx, 10
+        lea     r8, [tm_s_tracks]
+        call    t_int
+        lea     rcx, [l_b]
+        call    tracks_free
+        lea     rcx, [fx_search]
+        lea     rdx, [m_albums_items]
+        lea     r8, [l_a]
+        mov     r9d, KIND_ALBUM
+        mov     qword outarg(5), 0
+        call    parse_cards
+        mov     rcx, [l_a+LS_COUNT]
+        mov     edx, 4
+        lea     r8, [tm_s_albums]
+        call    t_int
+        lea     rcx, [l_a]
+        call    cards_free
+        lea     rcx, [fx_search]
+        lea     rdx, [m_artists_items]
+        lea     r8, [l_a]
+        mov     r9d, KIND_ARTIST
+        mov     qword outarg(5), 0
+        call    parse_cards
+        mov     rcx, [l_a+LS_COUNT]
+        mov     edx, 4
+        lea     r8, [tm_s_artists]
+        call    t_int
+        lea     rcx, [l_a]
+        xor     edx, edx
+        mov     r8d, CD_SIZE
+        call    list_at
+        mov     rcx, [rax+CD_SUB]
+        lea     rdx, [m_e9]
+        lea     r8, [tm_s_artist_sub]
+        call    t_wstr
+        lea     rcx, [l_a]
+        call    cards_free
+        lea     rcx, [fx_search]
+        lea     rdx, [m_playlists_items]
+        lea     r8, [l_a]
+        mov     r9d, KIND_PLAYLIST
+        mov     qword outarg(5), 0
+        call    parse_cards
+        mov     rcx, [l_a+LS_COUNT]
+        mov     edx, 3
+        lea     r8, [tm_s_pl]
+        call    t_int
+        lea     rcx, [l_a]
+        call    cards_free
+
+        lea     rcx, [fx_queue]
+        lea     rdx, [m_queue]
+        lea     r8, [l_b]
+        xor     r9d, r9d
+        call    parse_tracks
+        mov     rcx, [l_b+LS_COUNT]
+        mov     edx, 12
+        lea     r8, [tm_q_count]
+        call    t_int
+        lea     rcx, [l_b]
+        call    tracks_free
+        xor     ecx, ecx
+        cmp     qword [l_b+LS_COUNT], 0
+        sete    cl
+        lea     rdx, [tm_free]
+        call    t_check
 
         lea     rcx, [st_sum]
         call    out_z

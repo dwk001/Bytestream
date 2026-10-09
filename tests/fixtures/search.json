@@ -1,0 +1,760 @@
+{
+ "tracks": {
+  "items": [
+   {
+    "id": "tr0080",
+    "name": "Tide Lanterns",
+    "uri": "spotify:track:tr0080",
+    "duration_ms": 183520,
+    "artists": [
+     {
+      "id": "ar996827",
+      "name": "Kite Season",
+      "uri": "spotify:artist:KiteSeason"
+     }
+    ],
+    "type": "track",
+    "album": {
+     "id": "al000",
+     "name": "Afterglow Season",
+     "images": [
+      {
+       "url": "demo:1",
+       "height": 640,
+       "width": 640
+      },
+      {
+       "url": "demo:1",
+       "height": 300,
+       "width": 300
+      },
+      {
+       "url": "demo:1",
+       "height": 64,
+       "width": 64
+      }
+     ],
+     "uri": "spotify:album:al000",
+     "artists": [
+      {
+       "id": "ar996827",
+       "name": "Kite Season",
+       "uri": "spotify:artist:KiteSeason"
+      }
+     ]
+    }
+   },
+   {
+    "id": "tr0081",
+    "name": "Compass Honey",
+    "uri": "spotify:track:tr0081",
+    "duration_ms": 191439,
+    "artists": [
+     {
+      "id": "ar165147",
+      "name": "Moth Choir",
+      "uri": "spotify:artist:MothChoir"
+     }
+    ],
+    "type": "track",
+    "album": {
+     "id": "al001",
+     "name": "City of Lanterns",
+     "images": [
+      {
+       "url": "demo:2",
+       "height": 640,
+       "width": 640
+      },
+      {
+       "url": "demo:2",
+       "height": 300,
+       "width": 300
+      },
+      {
+       "url": "demo:2",
+       "height": 64,
+       "width": 64
+      }
+     ],
+     "uri": "spotify:album:al001",
+     "artists": [
+      {
+       "id": "ar165147",
+       "name": "Moth Choir",
+       "uri": "spotify:artist:MothChoir"
+      }
+     ]
+    }
+   },
+   {
+    "id": "tr0082",
+    "name": "Zenith Tide",
+    "uri": "spotify:track:tr0082",
+    "duration_ms": 199358,
+    "artists": [
+     {
+      "id": "ar631928",
+      "name": "Marlowe & Vane",
+      "uri": "spotify:artist:Marlowe&Vane"
+     }
+    ],
+    "type": "track",
+    "album": {
+     "id": "al002",
+     "name": "Soft Machines",
+     "images": [
+      {
+       "url": "demo:3",
+       "height": 640,
+       "width": 640
+      },
+      {
+       "url": "demo:3",
+       "height": 300,
+       "width": 300
+      },
+      {
+       "url": "demo:3",
+       "height": 64,
+       "width": 64
+      }
+     ],
+     "uri": "spotify:album:al002",
+     "artists": [
+      {
+       "id": "ar631928",
+       "name": "Marlowe & Vane",
+       "uri": "spotify:artist:Marlowe&Vane"
+      }
+     ]
+    }
+   },
+   {
+    "id": "tr0083",
+    "name": "Postcard Cassette",
+    "uri": "spotify:track:tr0083",
+    "duration_ms": 207277,
+    "artists": [
+     {
+      "id": "ar561478",
+      "name": "Paper Satellites",
+      "uri": "spotify:artist:PaperSatellites"
+     }
+    ],
+    "type": "track",
+    "album": {
+     "id": "al003",
+     "name": "Weather Report",
+     "images": [
+      {
+       "url": "demo:4",
+       "height": 640,
+       "width": 640
+      },
+      {
+       "url": "demo:4",
+       "height": 300,
+       "width": 300
+      },
+      {
+       "url": "demo:4",
+       "height": 64,
+       "width": 64
+      }
+     ],
+     "uri": "spotify:album:al003",
+     "artists": [
+      {
+       "id": "ar561478",
+       "name": "Paper Satellites",
+       "uri": "spotify:artist:PaperSatellites"
+      }
+     ]
+    }
+   },
+   {
+    "id": "tr0084",
+    "name": "Midnight Lanterns",
+    "uri": "spotify:track:tr0084",
+    "duration_ms": 215196,
+    "artists": [
+     {
+      "id": "ar539596",
+      "name": "Neon Harbor",
+      "uri": "spotify:artist:NeonHarbor"
+     },
+     {
+      "id": "ar572988",
+      "name": "Saffron Static",
+      "uri": "spotify:artist:SaffronStatic"
+     }
+    ],
+    "type": "track",
+    "album": {
+     "id": "al004",
+     "name": "Slow Orbit",
+     "images": [
+      {
+       "url": "demo:5",
+       "height": 640,
+       "width": 640
+      },
+      {
+       "url": "demo:5",
+       "height": 300,
+       "width": 300
+      },
+      {
+       "url": "demo:5",
+       "height": 64,
+       "width": 64
+      }
+     ],
+     "uri": "spotify:album:al004",
+     "artists": [
+      {
+       "id": "ar539596",
+       "name": "Neon Harbor",
+       "uri": "spotify:artist:NeonHarbor"
+      }
+     ]
+    }
+   },
+   {
+    "id": "tr0085",
+    "name": "Paper Honey",
+    "uri": "spotify:track:tr0085",
+    "duration_ms": 223115,
+    "artists": [
+     {
+      "id": "ar905492",
+      "name": "Glass Orchard",
+      "uri": "spotify:artist:GlassOrchard"
+     }
+    ],
+    "type": "track",
+    "album": {
+     "id": "al005",
+     "name": "Cassette Summer",
+     "images": [
+      {
+       "url": "demo:6",
+       "height": 640,
+       "width": 640
+      },
+      {
+       "url": "demo:6",
+       "height": 300,
+       "width": 300
+      },
+      {
+       "url": "demo:6",
+       "height": 64,
+       "width": 64
+      }
+     ],
+     "uri": "spotify:album:al005",
+     "artists": [
+      {
+       "id": "ar905492",
+       "name": "Glass Orchard",
+       "uri": "spotify:artist:GlassOrchard"
+      }
+     ]
+    }
+   },
+   {
+    "id": "tr0086",
+    "name": "Velvet Tide",
+    "uri": "spotify:track:tr0086",
+    "duration_ms": 231034,
+    "artists": [
+     {
+      "id": "ar102164",
+      "name": "Violet Parade",
+      "uri": "spotify:artist:VioletParade"
+     }
+    ],
+    "type": "track",
+    "album": {
+     "id": "al006",
+     "name": "Paper Moons",
+     "images": [
+      {
+       "url": "demo:7",
+       "height": 640,
+       "width": 640
+      },
+      {
+       "url": "demo:7",
+       "height": 300,
+       "width": 300
+      },
+      {
+       "url": "demo:7",
+       "height": 64,
+       "width": 64
+      }
+     ],
+     "uri": "spotify:album:al006",
+     "artists": [
+      {
+       "id": "ar102164",
+       "name": "Violet Parade",
+       "uri": "spotify:artist:VioletParade"
+      }
+     ]
+    }
+   },
+   {
+    "id": "tr0087",
+    "name": "Honey Cassette",
+    "uri": "spotify:track:tr0087",
+    "duration_ms": 238953,
+    "artists": [
+     {
+      "id": "ar572988",
+      "name": "Saffron Static",
+      "uri": "spotify:artist:SaffronStatic"
+     }
+    ],
+    "type": "track",
+    "album": {
+     "id": "al007",
+     "name": "Low Light",
+     "images": [
+      {
+       "url": "demo:8",
+       "height": 640,
+       "width": 640
+      },
+      {
+       "url": "demo:8",
+       "height": 300,
+       "width": 300
+      },
+      {
+       "url": "demo:8",
+       "height": 64,
+       "width": 64
+      }
+     ],
+     "uri": "spotify:album:al007",
+     "artists": [
+      {
+       "id": "ar572988",
+       "name": "Saffron Static",
+       "uri": "spotify:artist:SaffronStatic"
+      }
+     ]
+    }
+   },
+   {
+    "id": "tr0088",
+    "name": "Daylight Lanterns",
+    "uri": "spotify:track:tr0088",
+    "duration_ms": 246872,
+    "artists": [
+     {
+      "id": "ar233615",
+      "name": "Ivory Delta",
+      "uri": "spotify:artist:IvoryDelta"
+     }
+    ],
+    "type": "track",
+    "album": {
+     "id": "al008",
+     "name": "Night Shift Hymns",
+     "images": [
+      {
+       "url": "demo:9",
+       "height": 640,
+       "width": 640
+      },
+      {
+       "url": "demo:9",
+       "height": 300,
+       "width": 300
+      },
+      {
+       "url": "demo:9",
+       "height": 64,
+       "width": 64
+      }
+     ],
+     "uri": "spotify:album:al008",
+     "artists": [
+      {
+       "id": "ar233615",
+       "name": "Ivory Delta",
+       "uri": "spotify:artist:IvoryDelta"
+      }
+     ]
+    }
+   },
+   {
+    "id": "tr0089",
+    "name": "Ember Honey",
+    "uri": "spotify:track:tr0089",
+    "duration_ms": 254791,
+    "artists": [
+     {
+      "id": "ar164475",
+      "name": "The Quiet Engines",
+      "uri": "spotify:artist:TheQuietEngines"
+     }
+    ],
+    "type": "track",
+    "album": {
+     "id": "al009",
+     "name": "Rooftop Sessions",
+     "images": [
+      {
+       "url": "demo:10",
+       "height": 640,
+       "width": 640
+      },
+      {
+       "url": "demo:10",
+       "height": 300,
+       "width": 300
+      },
+      {
+       "url": "demo:10",
+       "height": 64,
+       "width": 64
+      }
+     ],
+     "uri": "spotify:album:al009",
+     "artists": [
+      {
+       "id": "ar164475",
+       "name": "The Quiet Engines",
+       "uri": "spotify:artist:TheQuietEngines"
+      }
+     ]
+    }
+   }
+  ],
+  "total": 10
+ },
+ "albums": {
+  "items": [
+   {
+    "id": "al000",
+    "name": "Afterglow Season",
+    "uri": "spotify:album:al000",
+    "images": [
+     {
+      "url": "demo:1",
+      "height": 640,
+      "width": 640
+     },
+     {
+      "url": "demo:1",
+      "height": 300,
+      "width": 300
+     },
+     {
+      "url": "demo:1",
+      "height": 64,
+      "width": 64
+     }
+    ],
+    "total_tracks": 8,
+    "album_type": "album",
+    "artists": [
+     {
+      "id": "ar539596",
+      "name": "Neon Harbor",
+      "uri": "spotify:artist:NeonHarbor"
+     }
+    ]
+   },
+   {
+    "id": "al001",
+    "name": "City of Lanterns",
+    "uri": "spotify:album:al001",
+    "images": [
+     {
+      "url": "demo:2",
+      "height": 640,
+      "width": 640
+     },
+     {
+      "url": "demo:2",
+      "height": 300,
+      "width": 300
+     },
+     {
+      "url": "demo:2",
+      "height": 64,
+      "width": 64
+     }
+    ],
+    "total_tracks": 9,
+    "album_type": "album",
+    "artists": [
+     {
+      "id": "ar905492",
+      "name": "Glass Orchard",
+      "uri": "spotify:artist:GlassOrchard"
+     }
+    ]
+   },
+   {
+    "id": "al002",
+    "name": "Soft Machines",
+    "uri": "spotify:album:al002",
+    "images": [
+     {
+      "url": "demo:3",
+      "height": 640,
+      "width": 640
+     },
+     {
+      "url": "demo:3",
+      "height": 300,
+      "width": 300
+     },
+     {
+      "url": "demo:3",
+      "height": 64,
+      "width": 64
+     }
+    ],
+    "total_tracks": 10,
+    "album_type": "album",
+    "artists": [
+     {
+      "id": "ar102164",
+      "name": "Violet Parade",
+      "uri": "spotify:artist:VioletParade"
+     }
+    ]
+   },
+   {
+    "id": "al003",
+    "name": "Weather Report",
+    "uri": "spotify:album:al003",
+    "images": [
+     {
+      "url": "demo:4",
+      "height": 640,
+      "width": 640
+     },
+     {
+      "url": "demo:4",
+      "height": 300,
+      "width": 300
+     },
+     {
+      "url": "demo:4",
+      "height": 64,
+      "width": 64
+     }
+    ],
+    "total_tracks": 11,
+    "album_type": "album",
+    "artists": [
+     {
+      "id": "ar572988",
+      "name": "Saffron Static",
+      "uri": "spotify:artist:SaffronStatic"
+     }
+    ]
+   }
+  ],
+  "total": 4
+ },
+ "artists": {
+  "items": [
+   {
+    "id": "ar0",
+    "name": "Neon Harbor",
+    "uri": "spotify:artist:ar0",
+    "images": [
+     {
+      "url": "demo:40",
+      "height": 640,
+      "width": 640
+     },
+     {
+      "url": "demo:40",
+      "height": 300,
+      "width": 300
+     },
+     {
+      "url": "demo:40",
+      "height": 64,
+      "width": 64
+     }
+    ]
+   },
+   {
+    "id": "ar1",
+    "name": "The Quiet Engines",
+    "uri": "spotify:artist:ar1",
+    "images": [
+     {
+      "url": "demo:41",
+      "height": 640,
+      "width": 640
+     },
+     {
+      "url": "demo:41",
+      "height": 300,
+      "width": 300
+     },
+     {
+      "url": "demo:41",
+      "height": 64,
+      "width": 64
+     }
+    ]
+   },
+   {
+    "id": "ar2",
+    "name": "Marlowe & Vane",
+    "uri": "spotify:artist:ar2",
+    "images": [
+     {
+      "url": "demo:42",
+      "height": 640,
+      "width": 640
+     },
+     {
+      "url": "demo:42",
+      "height": 300,
+      "width": 300
+     },
+     {
+      "url": "demo:42",
+      "height": 64,
+      "width": 64
+     }
+    ]
+   },
+   {
+    "id": "ar3",
+    "name": "Saffron Static",
+    "uri": "spotify:artist:ar3",
+    "images": [
+     {
+      "url": "demo:43",
+      "height": 640,
+      "width": 640
+     },
+     {
+      "url": "demo:43",
+      "height": 300,
+      "width": 300
+     },
+     {
+      "url": "demo:43",
+      "height": 64,
+      "width": 64
+     }
+    ]
+   }
+  ],
+  "total": 4
+ },
+ "playlists": {
+  "items": [
+   {
+    "id": "pl000",
+    "name": "Daily Mix 1",
+    "uri": "spotify:playlist:pl000",
+    "images": [
+     {
+      "url": "demo:20",
+      "height": 640,
+      "width": 640
+     },
+     {
+      "url": "demo:20",
+      "height": 300,
+      "width": 300
+     },
+     {
+      "url": "demo:20",
+      "height": 64,
+      "width": 64
+     }
+    ],
+    "owner": {
+     "id": "demo",
+     "display_name": "Demo Listener"
+    },
+    "public": false,
+    "items": {
+     "total": 20
+    }
+   },
+   {
+    "id": "pl001",
+    "name": "Late Night Drive",
+    "uri": "spotify:playlist:pl001",
+    "images": [
+     {
+      "url": "demo:21",
+      "height": 640,
+      "width": 640
+     },
+     {
+      "url": "demo:21",
+      "height": 300,
+      "width": 300
+     },
+     {
+      "url": "demo:21",
+      "height": 64,
+      "width": 64
+     }
+    ],
+    "owner": {
+     "id": "demo",
+     "display_name": "Demo Listener"
+    },
+    "public": false,
+    "items": {
+     "total": 20
+    }
+   },
+   {
+    "id": "pl002",
+    "name": "Focus Flow",
+    "uri": "spotify:playlist:pl002",
+    "images": [
+     {
+      "url": "demo:22",
+      "height": 640,
+      "width": 640
+     },
+     {
+      "url": "demo:22",
+      "height": 300,
+      "width": 300
+     },
+     {
+      "url": "demo:22",
+      "height": 64,
+      "width": 64
+     }
+    ],
+    "owner": {
+     "id": "demo",
+     "display_name": "Demo Listener"
+    },
+    "public": false,
+    "items": {
+     "total": 20
+    }
+   },
+   null
+  ],
+  "total": 4
+ }
+}

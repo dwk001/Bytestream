@@ -1,44 +1,61 @@
-# Bytestream
+# ByteStream
 
-## sonora.asm
+A native Windows Spotify player written in **x86-64 assembly** (NASM). No C, no Rust, no runtime:
+the window, GDI+ drawing, JSON parser and application logic are all assembly, calling Win32 DLLs
+directly.
 
-A [Sonora](https://github.com/sonorahq/sonora)-style local music player written in pure x86-64
-assembly: NASM, Linux, **raw syscalls, no libc**. The binary is a few KB.
+> Status: work in progress. The UI, data model and test harness are done and run in a built-in demo
+> mode. Live Spotify sign-in, API calls and in-app playback are the next milestones (see below).
+
+## What it does today
+
+- Home, Search, Library (playlists / liked songs / albums), playlist and album pages
+- Now-playing bar with seek, volume, shuffle, repeat, queue panel and full-screen view
+- Cover art with an ambient colour tint, anti-aliased vector icons and text (GDI+)
+- Dark, Midnight and Light themes; per-monitor DPI scaling
+- `--demo` mode with built-in sample music, so the whole UI works offline
+
+## Spotify and the terms of service
+
+ByteStream will use only Spotify's **official** interfaces:
+
+- OAuth 2.0 Authorization Code with PKCE (loopback redirect `http://127.0.0.1:8989/callback`)
+- The Spotify Web API for your library, playlists and search
+- The Spotify **Web Playback SDK**, hosted in WebView2, so audio plays inside ByteStream
+
+It does not decode or decrypt Spotify's streams and does not use any private protocol.
+Playback requires **Spotify Premium** (a Spotify requirement), and the app must be registered in the
+[Spotify developer dashboard](https://developer.spotify.com/dashboard); you paste its client ID into
+ByteStream on first run. ByteStream is not affiliated with Spotify.
+
+## Build
+
+Needs `nasm`, `lld-link` and Python 3. Works on Linux (cross-assembling) and on Windows.
 
 ```
-make            # nasm + ld
-./sonora ~/Music
-make test       # drives the real binary through a pty with scripted keystrokes
+make                 # -> build/bytestream.exe
+make test            # unit selftests + scripted UI flows
 ```
 
-| key | action |
+On Linux the tests run the real `.exe` under Wine + Xvfb. Useful flags:
+
+| flag | effect |
 | --- | --- |
-| `j` / `k` / arrows | move selection |
-| `Enter` | play selected |
-| `Space` | pause / resume |
-| `n` / `p` | next / previous |
-| `+` / `-` | volume |
-| `s` / `q` | stop / quit |
+| `--demo` | load built-in sample music instead of signing in |
+| `--selftest` | run the unit checks and exit |
+| `--page N` `--tab N` `--detail N` `--theme N` | start on a given screen / theme |
+| `--play` `--seek S` `--volume V` `--queue` `--fullscreen` | start in a playback state |
+| `--act ID,ARG` | activate an on-screen control (fails if it is not actually on screen) |
+| `--dump` | print the app state as `key=value` lines |
+| `--screenshot FILE.bmp` | save the rendered frame and exit |
 
-### What it does
+`tools/render_all.sh` renders every screen to PNG.
 
-- Scans a directory (`getdents64`) for `.wav` files, sorted
-- Parses RIFF/WAVE headers (8/16-bit PCM, 1–8 channels)
-- Plays through OSS (`/dev/dsp`) with software volume for 16-bit audio, auto-advance at end of track
-- Raw-mode terminal UI: scrolling list, now-playing line, progress bar, clock
-- If `/dev/dsp` doesn't exist it runs in "silent timing mode" (UI and clock run in real time, no sound)
+## Layout
 
-### What it is *not*
-
-Upstream Sonora is ~107k lines of Rust (GPUI renderer, webview, Widevine DRM, Apple Music / Deezer /
-YouTube / Subsonic clients, MP3/FLAC/AAC decoding, TLS). Full feature parity in hand-written assembly
-is not realistic, so this ports the **local-library player core** only. Missing: streaming services,
-TLS/HTTP, compressed codecs, GUI, playlists persistence, ALSA/PulseAudio/PipeWire (modern desktops
-often need an OSS emulation layer such as `padsp`/`aoss` or `snd-pcm-oss`).
-
-### Tested vs. not tested
-
-Tested (`make test`): listing, sorting, playback clock, pause/stop, next/prev, arrows, volume
-control, auto-advance, malformed files, empty/missing directories.
-**Not tested:** actual audio output — the dev container has no sound device, so the `/dev/dsp`
-code path (open + `SNDCTL_DSP_*` ioctls + writes) is unverified on real hardware.
+```
+src/        assembly sources (main.asm includes the rest)
+web/        player page for the Spotify Web Playback SDK
+tests/      end-to-end tests and recorded API fixtures
+tools/      import-library generator, screenshot and fixture helpers
+```

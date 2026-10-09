@@ -337,9 +337,9 @@ PROC buf_append_char, 1                 ; rcx = buf, dl = byte
 
 PROC buf_append_u64, 3                  ; rcx = buf, rdx = value
         mov     rbx, rcx
-        lea     rcx, loc(0)
+        lea     rcx, loc(2)                     ; 24-byte digit scratch: loc(2)..loc(0)
         call    u8_put_u64
-        lea     rdx, loc(0)
+        lea     rdx, loc(2)
         mov     r8, rax
         sub     r8, rdx
         mov     rcx, rbx

@@ -1,0 +1,308 @@
+{
+ "href": "x",
+ "limit": 50,
+ "total": 10,
+ "next": null,
+ "items": [
+  {
+   "id": "pl000",
+   "name": "Daily Mix 1",
+   "uri": "spotify:playlist:pl000",
+   "images": [
+    {
+     "url": "demo:20",
+     "height": 640,
+     "width": 640
+    },
+    {
+     "url": "demo:20",
+     "height": 300,
+     "width": 300
+    },
+    {
+     "url": "demo:20",
+     "height": 64,
+     "width": 64
+    }
+   ],
+   "owner": {
+    "id": "demo",
+    "display_name": "Demo Listener"
+   },
+   "public": false,
+   "items": {
+    "total": 12
+   }
+  },
+  {
+   "id": "pl001",
+   "name": "Late Night Drive",
+   "uri": "spotify:playlist:pl001",
+   "images": [
+    {
+     "url": "demo:21",
+     "height": 640,
+     "width": 640
+    },
+    {
+     "url": "demo:21",
+     "height": 300,
+     "width": 300
+    },
+    {
+     "url": "demo:21",
+     "height": 64,
+     "width": 64
+    }
+   ],
+   "owner": {
+    "id": "demo",
+    "display_name": "Demo Listener"
+   },
+   "public": false,
+   "items": {
+    "total": 17
+   }
+  },
+  {
+   "id": "pl002",
+   "name": "Focus Flow",
+   "uri": "spotify:playlist:pl002",
+   "images": [
+    {
+     "url": "demo:22",
+     "height": 640,
+     "width": 640
+    },
+    {
+     "url": "demo:22",
+     "height": 300,
+     "width": 300
+    },
+    {
+     "url": "demo:22",
+     "height": 64,
+     "width": 64
+    }
+   ],
+   "owner": {
+    "id": "demo",
+    "display_name": "Demo Listener"
+   },
+   "public": false,
+   "items": {
+    "total": 22
+   }
+  },
+  {
+   "id": "pl003",
+   "name": "Sunday Morning",
+   "uri": "spotify:playlist:pl003",
+   "images": [
+    {
+     "url": "demo:23",
+     "height": 640,
+     "width": 640
+    },
+    {
+     "url": "demo:23",
+     "height": 300,
+     "width": 300
+    },
+    {
+     "url": "demo:23",
+     "height": 64,
+     "width": 64
+    }
+   ],
+   "owner": {
+    "id": "demo",
+    "display_name": "Demo Listener"
+   },
+   "public": false,
+   "items": {
+    "total": 27
+   }
+  },
+  {
+   "id": "pl004",
+   "name": "Road Trip Anthems",
+   "uri": "spotify:playlist:pl004",
+   "images": [
+    {
+     "url": "demo:24",
+     "height": 640,
+     "width": 640
+    },
+    {
+     "url": "demo:24",
+     "height": 300,
+     "width": 300
+    },
+    {
+     "url": "demo:24",
+     "height": 64,
+     "width": 64
+    }
+   ],
+   "owner": {
+    "id": "demo",
+    "display_name": "Demo Listener"
+   },
+   "public": false,
+   "items": {
+    "total": 32
+   }
+  },
+  {
+   "id": "pl005",
+   "name": "Gym Energy",
+   "uri": "spotify:playlist:pl005",
+   "images": [
+    {
+     "url": "demo:25",
+     "height": 640,
+     "width": 640
+    },
+    {
+     "url": "demo:25",
+     "height": 300,
+     "width": 300
+    },
+    {
+     "url": "demo:25",
+     "height": 64,
+     "width": 64
+    }
+   ],
+   "owner": {
+    "id": "demo",
+    "display_name": "Demo Listener"
+   },
+   "public": false,
+   "items": {
+    "total": 37
+   }
+  },
+  {
+   "id": "pl006",
+   "name": "Rainy Day Jazz",
+   "uri": "spotify:playlist:pl006",
+   "images": [
+    {
+     "url": "demo:26",
+     "height": 640,
+     "width": 640
+    },
+    {
+     "url": "demo:26",
+     "height": 300,
+     "width": 300
+    },
+    {
+     "url": "demo:26",
+     "height": 64,
+     "width": 64
+    }
+   ],
+   "owner": {
+    "id": "demo",
+    "display_name": "Demo Listener"
+   },
+   "public": false,
+   "items": {
+    "total": 12
+   }
+  },
+  {
+   "id": "pl007",
+   "name": "Throwback Jams",
+   "uri": "spotify:playlist:pl007",
+   "images": [
+    {
+     "url": "demo:27",
+     "height": 640,
+     "width": 640
+    },
+    {
+     "url": "demo:27",
+     "height": 300,
+     "width": 300
+    },
+    {
+     "url": "demo:27",
+     "height": 64,
+     "width": 64
+    }
+   ],
+   "owner": {
+    "id": "demo",
+    "display_name": "Demo Listener"
+   },
+   "public": false,
+   "items": {
+    "total": 17
+   }
+  },
+  {
+   "id": "pl008",
+   "name": "Indie Discoveries",
+   "uri": "spotify:playlist:pl008",
+   "images": [
+    {
+     "url": "demo:28",
+     "height": 640,
+     "width": 640
+    },
+    {
+     "url": "demo:28",
+     "height": 300,
+     "width": 300
+    },
+    {
+     "url": "demo:28",
+     "height": 64,
+     "width": 64
+    }
+   ],
+   "owner": {
+    "id": "demo",
+    "display_name": "Demo Listener"
+   },
+   "public": false,
+   "items": {
+    "total": 22
+   }
+  },
+  {
+   "id": "pl009",
+   "name": "Coding Beats",
+   "uri": "spotify:playlist:pl009",
+   "images": [
+    {
+     "url": "demo:29",
+     "height": 640,
+     "width": 640
+    },
+    {
+     "url": "demo:29",
+     "height": 300,
+     "width": 300
+    },
+    {
+     "url": "demo:29",
+     "height": 64,
+     "width": 64
+    }
+   ],
+   "owner": {
+    "id": "demo",
+    "display_name": "Demo Listener"
+   },
+   "public": false,
+   "items": {
+    "total": 27
+   }
+  }
+ ]
+}

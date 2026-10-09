@@ -1,4 +1,4 @@
-; win64.inc - calling-convention macros and Win32 constants for the Sonora port.
+; win64.inc - calling-convention macros and Win32 constants for ByteStream.
 ;
 ; Every PROC gets the same frame:
 ;   [rbp+16..48]  caller's home slots for rcx, rdx, r8, r9

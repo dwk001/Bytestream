@@ -43,6 +43,8 @@ json_skip_str:                          ; rcx at opening quote -> rax past closi
 
 ; rcx = p -> rax = pointer just past the value starting at/after p (0 on malformed input)
 PROC json_skip, 1
+        test    rcx, rcx
+        jz      .err
         call    json_ws
         mov     rcx, rax
         mov     al, [rcx]
@@ -129,6 +131,8 @@ mem_eq:                                 ; rcx, rdx, r8 = n -> eax = 1 if equal
 ; rcx = p (object), rdx = key (z-string) -> rax = pointer to the member's value, 0 if absent
 PROC json_get, 3
         mov     loc(0), rdx
+        test    rcx, rcx
+        jz      .none
         call    json_ws
         mov     rbx, rax
         cmp     byte [rbx], '{'
@@ -186,6 +190,8 @@ PROC json_get, 3
 ; rcx = p (array), rdx = index -> rax = pointer to element, 0 if out of range
 PROC json_at, 1
         mov     loc(0), rdx
+        test    rcx, rcx
+        jz      .none
         call    json_ws
         mov     rbx, rax
         cmp     byte [rbx], '['
@@ -221,9 +227,11 @@ PROC json_at, 1
 
 ; rcx = p (array) -> rax = number of elements
 PROC json_count, 0
+        xor     r12d, r12d
+        test    rcx, rcx
+        jz      .out
         call    json_ws
         mov     rbx, rax
-        xor     r12d, r12d
         cmp     byte [rbx], '['
         jne     .out
         inc     rbx

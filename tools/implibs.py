@@ -13,15 +13,15 @@ IMPORTS = {
         CloseHandle GetLastError CreateThread GetCurrentThreadId Sleep GetTickCount64 GetEnvironmentVariableW
         SetEnvironmentVariableW GetFileSizeEx CreateDirectoryW GetStdHandle LocalFree GetModuleFileNameW
         QueryPerformanceCounter QueryPerformanceFrequency FlushFileBuffers GetFileAttributesW DeleteFileW
-        CreateEventW SetEvent WaitForSingleObject GetSystemTimeAsFileTime""",
+        CreateEventW SetEvent WaitForSingleObject GetSystemTimeAsFileTime GetLocalTime""",
     "user32": """RegisterClassExW CreateWindowExW DefWindowProcW ShowWindow UpdateWindow GetMessageW TranslateMessage
         DispatchMessageW PostQuitMessage PostMessageW PostThreadMessageW SendMessageW BeginPaint EndPaint InvalidateRect
         GetClientRect GetWindowRect LoadCursorW SetCursor GetDC ReleaseDC SetTimer KillTimer MoveWindow DestroyWindow
         SetWindowTextW GetWindowTextW SetFocus GetFocus GetKeyState AdjustWindowRectEx TrackMouseEvent SetProcessDPIAware
-        GetDpiForWindow GetSystemMetrics ScreenToClient ClientToScreen SetCapture ReleaseCapture MessageBoxW
+        GetDpiForWindow GetDpiForSystem GetSystemMetrics ScreenToClient ClientToScreen SetCapture ReleaseCapture MessageBoxW
         GetWindowLongPtrW SetWindowLongPtrW IsWindow SetWindowPos EnableWindow""",
     "gdi32": """CreateCompatibleDC CreateDIBSection SelectObject DeleteObject DeleteDC BitBlt GdiFlush SetBkColor SetTextColor
-        CreateSolidBrush CreateFontW""",
+        CreateSolidBrush CreateFontW CreateFontIndirectW""",
     "gdiplus": """GdiplusStartup GdiplusShutdown GdipCreateFromHDC GdipDeleteGraphics GdipSetSmoothingMode
         GdipSetTextRenderingHint GdipSetInterpolationMode GdipCreateSolidFill GdipSetSolidFillColor GdipDeleteBrush
         GdipFillRectangleI GdipFillEllipseI GdipFillPath GdipFillPolygonI GdipCreatePath GdipDeletePath GdipAddPathArcI
@@ -33,7 +33,7 @@ IMPORTS = {
         GdipDrawImageRectI GdipGetImageWidth GdipGetImageHeight GdipGetImageGraphicsContext GdipBitmapGetPixel
         GdipSetClipRectI GdipResetClip GdipGraphicsClear GdipFillRectangle GdipSetCompositingQuality
         GdipSetPixelOffsetMode GdipCreateLineBrushI GdipDeleteBrush GdipSetLineLinearBlend GdipFillPie GdipFillPieI
-        GdipSetLineColors GdipSetPenLineJoin GdipSetPenWidth GdipSetCompositingMode""",
+        GdipSetClipPath GdipSetLineColors GdipSetPenLineJoin GdipSetPenWidth GdipSetCompositingMode""",
     "shell32": """CommandLineToArgvW ShellExecuteW SHGetFolderPathW SHCreateDirectoryExW""",
     "shlwapi": """SHCreateMemStream""",
     "winhttp": """WinHttpOpen WinHttpConnect WinHttpOpenRequest WinHttpSendRequest WinHttpReceiveResponse
