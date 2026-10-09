@@ -710,6 +710,7 @@ def main():
         # the full conversation with a fake page (its tokens last 45 s, so the player page's token fetch must refresh)
         S.log.clear()
         S.play_reply = None
+        S.play_404 = 1                         # the first play request meets "device not found" (Spotify does not list it yet)
         S.expires_in = 45
         app = spawn(["--dump", "--hold", "--no-browser", "--wait-auth", "--api-base", base, "--auth-base", base,
                      "--type-client", "client-abc", "--type-port", str(sport), "--size", "1280x1300",
@@ -741,9 +742,10 @@ def main():
                 cmd = page.next_command()
                 check(cmd is not None and cmd.get("cmd") == "volume" and 0 <= cmd.get("pct", -1) <= 100,
                       "audio: the app pushes its volume to the page when it is ready", str(cmd))
-                check(wait_for(lambda: len(plays()) == 1), "audio: the pending play request is sent once the device exists", str(S.log[-3:]))
+                check(wait_for(lambda: len(plays()) == 2, 10), "audio: a 404 right after 'ready' is retried once instead of failing",
+                      str([(e['method'], e['path']) for e in S.log[-4:]]))
                 if plays():
-                    e = plays()[0]
+                    e = plays()[-1]
                     check(e["path"].endswith("device_id=dev-test-1") and json.loads(e["body"]) == {"uris": ["spotify:track:4cOdK2wGLETKBW3PvgPWqT"]},
                           "audio: PUT /me/player/play targets the Connect device with the track", str(e))
                     check(e["headers"].get("Authorization", "").startswith("Bearer access-") and e["headers"].get("Content-Type") == "application/json",
@@ -770,8 +772,9 @@ def main():
                 check(wait_for(lambda: any(e["path"] == "/v1/me/player/repeat?state=track&device_id=dev-test-1" for e in S.log)),
                       "audio: the repeat button cycles context -> track through the Web API", str([e["path"] for e in S.log[-4:]]))
                 S.play_reply = (403, {"error": {"status": 403, "reason": "PREMIUM_REQUIRED", "message": "Player command failed: Premium required"}})
+                n_plays = len(plays())
                 page.post({"type": "go"})
-                check(wait_for(lambda: len(plays()) == 2), "audio: pressing play again sends a second request straight away")
+                check(wait_for(lambda: len(plays()) == n_plays + 1), "audio: pressing play again sends another request straight away")
                 time.sleep(0.8)
                 S.play_reply = None
                 S.log.clear()

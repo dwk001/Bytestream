@@ -58,6 +58,7 @@ class State:
         self.library_status = None  # force this status for PUT/DELETE /v1/me/library
         self.queue_added = []     # URIs POSTed to /v1/me/player/queue
         self.queue_status = None
+        self.play_404 = 0         # answer this many PUT /me/player/play requests with 404 (device not known yet)
         self.unplayable = set()   # track URIs reported with is_playable: false in recently played
         self.playlists = None     # the user's playlists (None = start from the fixture); create/rename/delete change it
         self.playlist_status = None  # force this status for playlist-changing requests
@@ -357,6 +358,9 @@ class Handler(BaseHTTPRequestHandler):
             tok = auth[7:] if auth.startswith("Bearer ") else ""
             if STATE.access.get(tok, 0) < time.time():
                 return self._send(401, {"error": {"status": 401, "message": "The access token expired"}})
+            if STATE.play_404 > 0:
+                STATE.play_404 -= 1
+                return self._send(404, {"error": {"status": 404, "reason": "NO_ACTIVE_DEVICE", "message": "Device not found"}})
             if STATE.play_reply:
                 status, obj = STATE.play_reply
                 return self._send(status, obj)

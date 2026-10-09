@@ -24,6 +24,9 @@ section .bss
 sdk_ready:      resd 1                  ; 1 once the page reported the Connect device
 sdk_device:     resb 96                 ; its device id (UTF-8)
 play_pending:   resq 1                  ; heap JSON body of a play request waiting for the helper
+play_last:      resq 1                  ; copy of the last play body sent (heap), for one retry
+play_retry_at:  resq 1                  ; GetTickCount64 at which to resend it (0 = none)
+play_retried:   resd 1
 edge_exe:       resw 540
 edge_override:  resq 1                  ; --edge-path (UTF-16), tests only
 edge_proc:      resq 1
@@ -464,6 +467,19 @@ PROC edge_stop, 0
 
 ; UI timer: notices a dead helper, gives up on a helper that never connects, stops an idle one
 PROC edge_tick, 0
+        cmp     qword [play_retry_at], 0
+        je      .noretry
+        call    GetTickCount64
+        cmp     rax, [play_retry_at]
+        jb      .noretry
+        mov     qword [play_retry_at], 0
+        mov     rcx, [play_last]
+        test    rcx, rcx
+        jz      .noretry
+        call    u8_dup
+        mov     rcx, rax
+        call    audio_do_play                   ; (frees the copy; keeps its own)
+.noretry:
         cmp     qword [edge_proc], 0
         jne     .have
         cmp     qword [play_pending], 0
@@ -665,6 +681,7 @@ PROC audio_put_device, 2
 ; rcx = heap JSON body for PUT /me/player/play (ownership passes here)
 PROC audio_start, 2
         mov     loc(0), rcx
+        mov     dword [play_retried], 0
         lea     rcx, [l_play_req]
         call    log_msg
         cmp     dword [sdk_ready], 0
@@ -691,6 +708,11 @@ PROC audio_start, 2
 ; rcx = heap JSON body: sends it to the Connect device (frees it).   Bufs: url top 5
 PROC audio_do_play, 6
         mov     loc(0), rcx
+        mov     rcx, [play_last]                ; keep a copy: a brand-new device is sometimes not known to the Web API yet
+        call    mem_free
+        mov     rcx, loc(0)
+        call    u8_dup
+        mov     [play_last], rax
         BUFZERO 5
         lea     rcx, loc(5)
         lea     rdx, [p_play]
@@ -734,7 +756,7 @@ PROC h_play, 4
         cmp     eax, 403
         je      .forbidden
         cmp     eax, 404
-        je      .device
+        je      .device404
         cmp     eax, 0
         je      .offline
         lea     rcx, [w_msg_playfail]
@@ -756,6 +778,16 @@ PROC h_play, 4
         jnz     .banner
         lea     rcx, [w_msg_playfail]
         call    ui_toast
+        jmp     .out
+.device404:
+        cmp     dword [play_retried], 0
+        jne     .device
+        cmp     qword [play_last], 0
+        je      .device
+        mov     dword [play_retried], 1         ; right after 'ready' Spotify may not list the device yet: try once more
+        call    GetTickCount64
+        add     rax, 1500
+        mov     [play_retry_at], rax
         jmp     .out
 .device:
         mov     dword [sdk_ready], 0            ; the device we knew is gone: wait for a fresh 'ready'
