@@ -1338,10 +1338,8 @@ def main():
             {"field_caret": 6, "field_anchor": 6})
         fld("field: Shift+click extends the selection from the old caret",
             ["--act", f"{FOC},0"] + typed("abcdef") + ["--act", f"{MOUSE},{1 << 16}"], {"field_caret": 0, "field_anchor": 6})
-        fld("field: clicking in the middle lands between letters",
-            ["--act", f"{FOC},0"] + typed("abcdef") + ["--act", f"{MOUSE},40"], {})
-        rc, out, st, _ = run(["--demo", "--dump", "--page", "1", "--act", f"{FOC},0"] + typed("abcdef") + ["--act", f"{MOUSE},40"])
-        check(1 <= int(st.get("field_caret", "0")) <= 5, "field: a click inside the text puts the caret between two letters", str(st.get("field_caret")))
+        rc, out, st, _ = run(["--demo", "--dump", "--page", "1", "--act", f"{FOC},0"] + typed("abcdefghijklmnopqrstuvwx") + ["--act", f"{MOUSE},40"])
+        check(2 <= int(st.get("field_caret", "0")) <= 20, "field: a click inside the text puts the caret between two letters (font metrics differ per system)", str(st.get("field_caret")))
         # clipboard (test runs print instead of using it, and read --clip-in)
         rc, out, st, _ = run(["--demo", "--dump", "--no-browser", "--page", "1", "--act", f"{FOC},0"] + typed("hello world") +
                              ["--act", f"{KEY},{VK_LEFT | SHIFT}"] * 5 + ["--act", f"{KEY},{ord('C') | CTRL}"])
