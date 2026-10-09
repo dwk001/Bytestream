@@ -42,8 +42,7 @@ jobs:
           go-version: "1.25"
           cache: false
 
-      - uses: msys2/setup-msys2@v2
-        if: steps.cache.outputs.cache-hit != 'true'
+      - uses: msys2/setup-msys2@v2            # (always: the smoke test below also runs in this shell)
         with:
           msystem: MINGW64
           update: false
