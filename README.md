@@ -21,7 +21,7 @@ nothing and uses no CPU.
 
 ## What is assembly, and what is Windows
 
-Everything in `src/` (about 24,000 lines) is hand-written NASM. The program itself does: JSON parsing, the HTTP client's
+Everything in `src/` (about 25,000 lines) is hand-written NASM. The program itself does: JSON parsing, the HTTP client's
 request logic, OAuth with PKCE, the local web server, the list / track / card models, layout and hit-testing, every widget
 (buttons, rows, cards, menus, dialogs, the text boxes), animation, the cover cache, and the **PNG and JPEG decoders**.
 It asks Windows for: opening a window and getting input (user32), shape / text rasterisation and bitmap scaling (GDI+),
