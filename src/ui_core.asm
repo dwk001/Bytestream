@@ -49,10 +49,12 @@ extern CreateFontIndirectW, CreateSolidBrush, SetTextColor, SetBkColor
 %define H_COPY_DIAG   33
 %define H_CANCEL_SIGNIN 34
 %define H_COPY_AUTH   35
+%define H_TEST_AUDIO  36
 
 %define BA_NONE       0
 %define BA_SETTINGS   1                 ; banner action: open Settings
 %define BA_DASHBOARD  2                 ; banner action: open the Spotify dashboard
+%define BA_GET_EDGE   3                 ; banner action: open the Microsoft Edge download page
 
 ; ---- track / card list sources used in H_TRACK / H_CARD args
 %define SRC_RECENT    1

@@ -6,7 +6,7 @@ Runs the Windows binary (under Wine + Xvfb on Linux, natively on Windows) and ch
   * scripted UI flows: `--act ID,ARG` activates a hit target that must really exist on screen,
     `--dump` prints the resulting state, `--screenshot` saves the rendered frame.
 """
-import http.client, os, queue, shutil, socket, struct, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request
+import http.client, json, os, queue, shutil, socket, struct, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXE = os.path.join(ROOT, "build", "bytestream.exe")
@@ -21,6 +21,7 @@ H_QUEUE, H_FULL, H_TAB, H_THEME, H_BACK, H_FS_CLOSE, H_DETAIL_PLAY = 12, 13, 14,
 H_SIGNIN, H_DEMO = 16, 24
 H_COPY_URI, H_OPEN_DASH, H_BANNER_X = 28, 29, 30
 H_OPEN_LOG, H_COPY_DIAG, H_CANCEL_SIGNIN = 32, 33, 34
+H_TEST_AUDIO = 36
 H_SIGNOUT = 18
 SRC_RECENT, SRC_LIKED, SRC_PLAYLISTS, SRC_ALBUMS = 1, 2, 5, 6
 PAGE_HOME, PAGE_SEARCH, PAGE_LIBRARY, PAGE_DETAIL, PAGE_SETTINGS, PAGE_LOGIN = range(6)
@@ -165,6 +166,64 @@ def signin(base, d, port=None, browser="ok", act_signin=True, extra=None, client
             k, v = l.split("=", 1)
             state[k.strip()] = v.strip()
     return state, landed, lines
+
+
+class FakePage:
+    """Plays the part of the Edge helper page: talks to the app's /bridge/* routes like web/player.js does."""
+
+    def __init__(self, url):
+        u = urllib.parse.urlparse(url)
+        self.port = u.port
+        self.k = urllib.parse.parse_qs(u.query)["k"][0]
+        self.sse = None
+
+    def get(self, path):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=15)
+        c.request("GET", path + ("&" if "?" in path else "?") + "k=" + self.k)
+        r = c.getresponse()
+        data = r.read()
+        c.close()
+        return r.status, data
+
+    def post(self, obj):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=15)
+        c.request("POST", f"/bridge/event?k={self.k}", body=json.dumps(obj), headers={"Content-Type": "application/json"})
+        r = c.getresponse()
+        r.read()
+        c.close()
+        return r.status
+
+    def open_commands(self):
+        self.sse = http.client.HTTPConnection("127.0.0.1", self.port, timeout=15)
+        self.sse.request("GET", f"/bridge/cmds?k={self.k}")
+        r = self.sse.getresponse()
+        self.sse_resp = r
+        return r.status, r.fp.readline().decode()
+
+    def next_command(self):
+        """Blocks (up to the socket timeout) for the next 'data:' line of the command stream; returns the parsed JSON."""
+        try:
+            while True:
+                line = self.sse_resp.fp.readline().decode()
+                if not line:
+                    return None
+                if line.startswith("data:"):
+                    return json.loads(line[5:])
+        except OSError:
+            return None
+
+    def close(self):
+        if self.sse:
+            self.sse.close()
+
+
+def wait_for(pred, timeout=15):
+    end = time.time() + timeout
+    while time.time() < end:
+        if pred():
+            return True
+        time.sleep(0.1)
+    return False
 
 
 def stop(proc):
@@ -573,10 +632,12 @@ def main():
             s, h, b = hit("GET", "/player?k=wrongwrongwrongwrongwr")
             check(s == 403, "server: a wrong secret is refused", str(s))
             s, h, b = hit("GET", f"/player?k={secret}")
-            check(s == 200 and b"ByteStream player" in b and "script-src 'self' https://sdk.scdn.co" in h.get("content-security-policy", ""),
-                  "server: the player page is served with a restrictive CSP", str((s, h)))
-            s, h, b = hit("GET", f"/player.js?k={secret}")
-            check(s == 200 and "javascript" in h.get("content-type", ""), "server: the player script is served", str(s))
+            check(s == 200 and b"ByteStream player" in b and "frame-ancestors 'none'" in h.get("content-security-policy", ""),
+                  "server: the player page is served with a CSP that forbids framing", str((s, h)))
+            s, h, b = hit("GET", "/player.js")
+            check(s == 200 and "javascript" in h.get("content-type", "") and b"/bridge/event" in b, "server: the player script is served (it holds no secret)", str(s))
+            s, h, b = hit("GET", "/player.js", host="evil.example")
+            check(s == 403, "server: even the script obeys the Host check", str(s))
             s, h, b = hit("GET", f"/bridge/token?k={secret}")
             check(s == 401, "server: the bridge refuses to hand out a token while signed out", str(s))
             s, h, b = hit("GET", "/bridge/token")
@@ -609,10 +670,132 @@ def main():
         finally:
             stop(app)
         logtxt = open(os.path.join(d, "bytestream.log"), encoding="utf-8").read()
-        check('bridge event: {"type":"ready","device_id":"dev1"}' in logtxt, "server: a posted event reaches the UI thread", logtxt[-300:])
+        check("audio: player ready, device dev1" in logtxt, "server: a posted event reaches the UI thread", logtxt[-300:])
         check("wrong sign-in state" in logtxt and "wrong Host header" in logtxt and "missing or wrong secret" in logtxt,
               "server: every rejection is logged with its reason")
         shutil.rmtree(d, ignore_errors=True)
+
+
+    # ---- milestone 3: in-app audio.  Python plays the part of the Edge page; the app is the real binary.
+    if ONLY in (None, 'm3'):
+        S = fake_spotify.STATE
+        S.reset()
+        d = tempfile.mkdtemp(prefix="bs-data-")
+        sport = free_port()
+        st, _, _ = signin(base, d, port=sport)
+        check(st.get("signed_in") == "1", "audio: setup - a signed-in session exists", str(st))
+
+        def plays():
+            return [e for e in S.log if e["method"] == "PUT" and e["path"].startswith("/v1/me/player/play")]
+
+        # no browser installed: Test audio explains it instead of failing silently
+        S.log.clear()
+        st, _, lines = signin(base, d, port=sport, act_signin=False, extra=[
+            "--size", "1280x1300", "--edge-path", "", "--act", f"{H_NAV},{PAGE_SETTINGS}", "--act", f"{H_TEST_AUDIO},0"])
+        check(st.get("banner") == "1" and not any(l.startswith("edge-launch:") for l in lines) and not plays(),
+              "audio: without Edge a banner appears and nothing is launched", str(st))
+        logtxt = open(os.path.join(d, "bytestream.log"), encoding="utf-8").read()
+        check("audio: no Edge or Chrome found" in logtxt, "audio: the missing browser is logged")
+
+        # the full conversation with a fake page
+        S.log.clear()
+        S.play_reply = None
+        app = spawn(["--dump", "--hold", "--no-browser", "--wait-auth", "--api-base", base, "--auth-base", base,
+                     "--type-client", "client-abc", "--type-port", str(sport), "--size", "1280x1300",
+                     "--edge-path", "x:\\fake\\msedge.exe",
+                     "--act", f"{H_NAV},{PAGE_SETTINGS}", "--act", f"{H_TEST_AUDIO},0",
+                     "--act-late", f"{H_PLAY},0", "--act-late", f"{H_NEXT},0", "--act-late", f"{H_PREV},0",
+                     "--act-late", f"{H_SHUFFLE},0", "--act-late", f"{H_REPEAT},0", "--act-late", f"{H_TEST_AUDIO},0"], d)
+        page = None
+        try:
+            line, seen = read_until(app, "edge-launch:")
+            check(line is not None, "audio: Test audio launches the helper (announced in test mode)", str(seen))
+            if line:
+                page = FakePage(line[len("edge-launch:"):])
+                status, body = page.get("/player")
+                check(status == 200, "audio: the helper page loads with the launch secret", str(status))
+                status, body = page.get("/bridge/token")
+                tok = json.loads(body).get("token", "") if status == 200 else ""
+                check(status == 200 and tok.startswith("access-"), "audio: the page can fetch the access token", str((status, body[:80])))
+                status, first = page.open_commands()
+                check(status == 200 and first.startswith(": connected"), "audio: the command stream opens", first)
+                check(page.post({"type": "hello"}) == 204, "audio: hello is accepted")
+                check(not plays(), "audio: nothing is played before the page reports its device")
+                check(page.post({"type": "ready", "device_id": "dev-test-1"}) == 204, "audio: ready is accepted")
+                cmd = page.next_command()
+                check(cmd is not None and cmd.get("cmd") == "volume" and 0 <= cmd.get("pct", -1) <= 100,
+                      "audio: the app pushes its volume to the page when it is ready", str(cmd))
+                check(wait_for(lambda: len(plays()) == 1), "audio: the pending play request is sent once the device exists", str(S.log[-3:]))
+                if plays():
+                    e = plays()[0]
+                    check(e["path"].endswith("device_id=dev-test-1") and json.loads(e["body"]) == {"uris": ["spotify:track:4cOdK2wGLETKBW3PvgPWqT"]},
+                          "audio: PUT /me/player/play targets the Connect device with the track", str(e))
+                    check(e["headers"].get("Authorization", "").startswith("Bearer access-") and e["headers"].get("Content-Type") == "application/json",
+                          "audio: the play request carries the bearer token and a JSON content type")
+                check(page.post({"type": "state", "paused": False, "position": 1234, "duration": 215000, "shuffle": True, "repeat": 1,
+                                 "track": {"uri": "spotify:track:4cOdK2wGLETKBW3PvgPWqT", "name": "Test Track",
+                                           "artists": ["Artist One", "Artist Two"], "album": "Test Album",
+                                           "images": ["https://i.scdn.co/image/large", "https://i.scdn.co/image/mid", "https://i.scdn.co/image/small"]}}) == 204,
+                      "audio: a state event is accepted")
+                time.sleep(0.5)
+                page.post({"type": "go"})
+                cmd = page.next_command()
+                check(cmd == {"cmd": "toggle"}, "audio: the play/pause button sends a toggle command", str(cmd))
+                page.post({"type": "go"})
+                cmd = page.next_command()
+                check(cmd == {"cmd": "next"}, "audio: the next button sends a next command", str(cmd))
+                page.post({"type": "go"})
+                cmd = page.next_command()
+                check(cmd == {"cmd": "prev"}, "audio: the previous button sends a prev command", str(cmd))
+                page.post({"type": "go"})
+                check(wait_for(lambda: any(e["path"] == "/v1/me/player/shuffle?state=false&device_id=dev-test-1" for e in S.log)),
+                      "audio: the shuffle button turns shuffle off on our device through the Web API", str([e["path"] for e in S.log[-4:]]))
+                page.post({"type": "go"})
+                check(wait_for(lambda: any(e["path"] == "/v1/me/player/repeat?state=track&device_id=dev-test-1" for e in S.log)),
+                      "audio: the repeat button cycles context -> track through the Web API", str([e["path"] for e in S.log[-4:]]))
+                S.play_reply = (403, {"error": {"status": 403, "reason": "PREMIUM_REQUIRED", "message": "Player command failed: Premium required"}})
+                page.post({"type": "go"})
+                check(wait_for(lambda: len(plays()) == 2), "audio: pressing play again sends a second request straight away")
+                time.sleep(0.8)
+                page.post({"type": "state", "paused": True, "position": 99000, "duration": 215000, "shuffle": False, "repeat": 0,
+                           "track": {"uri": "spotify:track:2222222222222222222222", "name": "Second \u00e9", "artists": ["Solo"], "album": "Other",
+                                     "images": []}})
+                time.sleep(0.3)
+                page.post({"type": "quit"})
+        finally:
+            if page:
+                page.close()
+        lines = finish(app)
+        st3 = {}
+        for l in lines:
+            if "=" in l and not l.startswith(("open:", "player-url:", "clipboard:", "edge-launch:")):
+                k, v = l.split("=", 1)
+                st3[k.strip()] = v.strip()
+        check(st3.get("sdk_ready") == "1" and st3.get("device") == "dev-test-1", "audio: the dump shows the connected device", str(st3))
+        check(st3.get("title") == "Second \u00e9" and st3.get("artist") == "Solo" and st3.get("album") == "Other"
+              and st3.get("track_uri") == "spotify:track:2222222222222222222222",
+              "audio: a state event replaces the now-playing track (UTF-8 survives)", str(st3))
+        check(st3.get("paused") == "1" and st3.get("shuffle") == "0" and st3.get("repeat") == "0" and st3.get("duration_ms") == "215000",
+              "audio: paused, shuffle, repeat and duration follow the page", str(st3))
+        check(st3.get("banner") == "1", "audio: Premium required (403) shows a banner", str(st3))
+        logtxt = open(os.path.join(d, "bytestream.log"), encoding="utf-8").read()
+        check("audio: player ready, device dev-test-1" in logtxt and "audio: now playing Test Track" in logtxt
+              and "audio: play request failed, status 403" in logtxt, "audio: the conversation is in the log", logtxt[-600:])
+        check("access-" not in logtxt, "audio: no access token in the log")
+        shutil.rmtree(d, ignore_errors=True)
+
+        # the page script itself, in a real browser engine against a mocked SDK
+        node = shutil.which("node")
+        if node:
+            p = subprocess.run([node, os.path.join(os.path.dirname(os.path.abspath(__file__)), "player_page.js")],
+                               capture_output=True, text=True, timeout=180)
+            rows = [l for l in p.stdout.splitlines() if l.startswith(("ok ", "FAIL "))]
+            if p.stdout.startswith("SKIP") or not rows:
+                print("skip player.js tests:", (p.stdout + p.stderr).strip()[:200])
+            for l in rows:
+                check(l.startswith("ok "), l[3:] if l.startswith("ok ") else l[5:])
+        else:
+            print("skip player.js tests: node is not installed")
 
 
     # ---- the harness itself must fail loudly when a target is absent

@@ -290,18 +290,30 @@ PROC player_set_volume, 0               ; ecx = 0..100
         call    real_set_volume
 .out:   EPROC
 
-player_shuffle_toggle:
+PROC player_shuffle_toggle, 0
         xor     dword [np_shuffle], 1
-        ret
+        cmp     dword [g_demo], 0
+        jne     .out
+        cmp     dword [sdk_ready], 0
+        je      .out
+        mov     ecx, [np_shuffle]
+        call    real_shuffle
+.out:   EPROC
 
-player_repeat_cycle:
+PROC player_repeat_cycle, 0
         mov     eax, [np_repeat]
         inc     eax
         cmp     eax, 3
         jb      .s
         xor     eax, eax
 .s:     mov     [np_repeat], eax
-        ret
+        cmp     dword [g_demo], 0
+        jne     .out
+        cmp     dword [sdk_ready], 0
+        je      .out
+        mov     ecx, eax
+        call    real_repeat
+.out:   EPROC
 
 ; Called from the UI timer. -> eax = 1 when the display needs a repaint (something is playing).
 PROC player_tick, 0

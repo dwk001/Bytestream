@@ -22,6 +22,7 @@ text_begin:
 %include "ui_core.asm"
 %include "auth.asm"
 %include "localsrv.asm"
+%include "audio.asm"
 %include "ui_widgets.asm"
 %include "ui_chrome.asm"
 %include "ui_overlays.asm"
@@ -69,9 +70,10 @@ cli_http_meth:  resq 1
 cli_http_body:  resq 1
 cli_nact:       resd 1
 cli_ready:      resd 1                  ; set once scripted actions are done (screenshot may be taken)
-cli_act_id:     resd 8
-cli_act_arg:    resd 8
-dump_buf:       resb 1024
+cli_act_id:     resd 16                 ; bit 16 = --act-late (waits for the player page), bit 17 = already run
+cli_act_arg:    resd 16
+dump_buf:       resb 4096
+cli_hold:       resd 1                  ; --hold: with --dump, keep running until the player page posts "quit"
 dump_tmp:       resd 1
 
 section .data
@@ -95,7 +97,9 @@ WSTR a_http, "--http-test"
 WSTR a_api, "--api-base"
 WSTR a_authb, "--auth-base"
 WSTR a_ddir, "--data-dir"
+WSTR a_edge, "--edge-path"
 WSTR a_nobrowser, "--no-browser"
+WSTR a_hold, "--hold"
 WSTR a_netget, "--net-get"
 WSTR a_tclient, "--type-client"
 WSTR a_tport, "--type-port"
@@ -140,8 +144,18 @@ ZSTR d_net3, "net_3="
 ZSTR d_pending, "net_pending="
 ZSTR d_banner, "banner="
 ZSTR d_client, "client_id="
+ZSTR d_artist, "artist="
+ZSTR d_album, "album="
+ZSTR d_uri, "track_uri="
+ZSTR d_img_l, "cover_large="
+ZSTR d_img_s, "cover_small="
+ZSTR d_device, "device="
+ZSTR d_pos, "position_ms="
+ZSTR d_dur, "duration_ms="
+ZSTR d_sdk, "sdk_ready="
 ZSTR l_exit, "exit"
 WSTR a_act, "--act"
+WSTR a_actlate, "--act-late"
 WSTR a_dump, "--dump"
 
 section .text
@@ -294,8 +308,15 @@ PROC parse_cli, 4
         lea     rdx, [a_nobrowser]
         call    arg_is
         test    eax, eax
-        jz      .a7
+        jz      .a6c
         mov     dword [cli_no_shell], 1
+        jmp     .next
+.a6c:   mov     rcx, rbx
+        lea     rdx, [a_hold]
+        call    arg_is
+        test    eax, eax
+        jz      .a7
+        mov     dword [cli_hold], 1
         jmp     .next
 .a7:    test    rsi, rsi
         jz      .next                           ; remaining flags all take a value
@@ -458,8 +479,16 @@ PROC parse_cli, 4
         lea     rdx, [a_ddir]
         call    arg_is
         test    eax, eax
-        jz      .b17
+        jz      .b16b
         mov     [cli_data_dir], rsi
+        inc     qword loc(2)
+        jmp     .next
+.b16b:  mov     rcx, rbx
+        lea     rdx, [a_edge]
+        call    arg_is
+        test    eax, eax
+        jz      .b17
+        mov     [edge_override], rsi
         inc     qword loc(2)
         jmp     .next
 .b17:   mov     rcx, rbx
@@ -510,13 +539,21 @@ PROC parse_cli, 4
 .b22:   mov     rcx, rbx
         lea     rdx, [a_act]
         call    arg_is
+        xor     r12d, r12d
+        test    eax, eax
+        jnz     .isact
+        mov     rcx, rbx
+        lea     rdx, [a_actlate]
+        call    arg_is
+        mov     r12d, 0x10000
         test    eax, eax
         jz      .next
-        mov     eax, [cli_nact]
-        cmp     eax, 8
+.isact: mov     eax, [cli_nact]
+        cmp     eax, 16
         jae     .skipact
         mov     rcx, rsi
         call    w_pair
+        or      eax, r12d
         mov     ecx, [cli_nact]
         lea     r8, [cli_act_id]
         mov     [r8+rcx*4], eax
@@ -655,14 +692,45 @@ PROC wait_auth, 4
 .out:   EPROC
 
 ; Runs the --act list: each entry activates a hit target that really exists on screen.
-PROC run_acts, 4
+PROC run_acts, 2
         xor     ebx, ebx
 .next:  cmp     ebx, [cli_nact]
         jae     .out
         lea     rax, [cli_act_id]
-        mov     r12d, [rax+rbx*4]
+        test    dword [rax+rbx*4], 0x30000      ; --act-late entries wait for the player page
+        jnz     .skip
+        mov     ecx, ebx
+        call    run_act_at
+.skip:  inc     ebx
+        jmp     .next
+.out:   EPROC
+
+; Runs the next --act-late entry (tests: the fake player page posts {"type":"go"} when it is ready for it).
+PROC run_late_act, 2
+        xor     ebx, ebx
+.next:  cmp     ebx, [cli_nact]
+        jae     .out
+        lea     rax, [cli_act_id]
+        mov     ecx, [rax+rbx*4]
+        test    ecx, 0x10000
+        jz      .skip
+        test    ecx, 0x20000
+        jnz     .skip
+        or      dword [rax+rbx*4], 0x20000
+        mov     ecx, ebx
+        call    run_act_at
+        jmp     .out
+.skip:  inc     ebx
+        jmp     .next
+.out:   EPROC
+
+; ecx = index into the --act table: activates its hit target, or ends the process when it is not on screen
+PROC run_act_at, 2
+        lea     rax, [cli_act_id]
+        mov     r12d, [rax+rcx*4]
+        and     r12d, 0xFFFF
         lea     rax, [cli_act_arg]
-        mov     r13d, [rax+rbx*4]
+        mov     r13d, [rax+rcx*4]
         xor     esi, esi
 .find:  cmp     esi, [hit_n]
         jae     .missing
@@ -684,8 +752,7 @@ PROC run_acts, 4
         call    InvalidateRect
         mov     rcx, [hwnd]
         call    UpdateWindow
-        inc     ebx
-        jmp     .next
+        jmp     .out
 .missing:
         lea     rcx, [s_act_missing]
         call    out_z
@@ -808,9 +875,77 @@ PROC dump_state, 4
         call    mem_free
 .nodet: mov     byte [rdi], 10
         inc     rdi
+        mov     rcx, rdi
+        lea     rdx, [d_artist]
+        mov     r8, [np_artist]
+        call    dump_wfield
+        mov     rdi, rax
+        mov     rcx, rdi
+        lea     rdx, [d_album]
+        mov     r8, [np_album]
+        call    dump_wfield
+        mov     rdi, rax
+        mov     rcx, rdi
+        lea     rdx, [d_uri]
+        mov     r8, [np_uri]
+        call    dump_u8field
+        mov     rdi, rax
+        mov     rcx, rdi
+        lea     rdx, [d_img_l]
+        mov     r8, [np_img_l]
+        call    dump_u8field
+        mov     rdi, rax
+        mov     rcx, rdi
+        lea     rdx, [d_img_s]
+        mov     r8, [np_img_s]
+        call    dump_u8field
+        mov     rdi, rax
+        mov     rcx, rdi
+        lea     rdx, [d_device]
+        lea     r8, [sdk_device]
+        call    dump_u8field
+        mov     rdi, rax
+        DUMPNUM d_pos, dword [np_pos]
+        DUMPNUM d_dur, dword [np_dur]
+        DUMPNUM d_sdk, dword [sdk_ready]
         mov     byte [rdi], 0
         lea     rcx, [dump_buf]
         call    out_z
+        EPROC
+
+; rcx = dest, rdx = label, r8 = UTF-16 string or 0 -> rax = end of "label value\n"
+PROC dump_wfield, 4
+        mov     loc(1), r8
+        call    dump_str
+        mov     loc(0), rax
+        mov     rcx, loc(1)
+        test    rcx, rcx
+        jz      .nl
+        mov     rdx, -1
+        call    w_to_u8
+        mov     loc(2), rax
+        mov     rcx, loc(0)
+        mov     rdx, rax
+        call    dump_str
+        mov     loc(0), rax
+        mov     rcx, loc(2)
+        call    mem_free
+.nl:    mov     rax, loc(0)
+        mov     byte [rax], 10
+        inc     rax
+        EPROC
+
+; rcx = dest, rdx = label, r8 = UTF-8 string or 0 -> rax = end of "label value\n"
+PROC dump_u8field, 2
+        mov     loc(1), r8
+        call    dump_str
+        mov     rdx, loc(1)
+        test    rdx, rdx
+        jz      .nl
+        mov     rcx, rax
+        call    dump_str
+.nl:    mov     byte [rax], 10
+        inc     rax
         EPROC
 
 ; rcx = destination, rdx = z-string -> rax = end of the copy (no NUL written)
@@ -1035,6 +1170,8 @@ PROC start, 8
         call    ui_mouse_move
 .hv:    cmp     dword [cli_dump], 0
         je      .ready2
+        cmp     dword [cli_hold], 0
+        jne     .ready2                         ; --hold: the dump happens when the player page says "quit"
         call    dump_state
         cmp     qword [cli_shot], 0
         jne     .ready2

@@ -342,6 +342,8 @@ PROC ui_activate, 6
         je      .cancelsignin
         cmp     ecx, H_COPY_AUTH
         je      .copyauth
+        cmp     ecx, H_TEST_AUDIO
+        je      .testaudio
         xor     eax, eax
         jmp     .out
 .nav:   mov     eax, edx
@@ -480,6 +482,15 @@ PROC ui_activate, 6
 .copydiag:
         call    app_copy_diagnostics
         jmp     .done
+.testaudio:
+        cmp     dword [g_demo], 0
+        je      .ta_live
+        lea     rcx, [w_ta_demo]
+        call    ui_toast
+        jmp     .done
+.ta_live:
+        call    audio_test
+        jmp     .done
 .dash:  lea     rcx, [s_dashboard_url]
         call    os_open_url
         jmp     .done
@@ -493,7 +504,12 @@ PROC ui_activate, 6
         lea     rcx, [s_dashboard_url]
         call    os_open_url
         jmp     .done
-.bset:  cmp     dword loc(1), BA_SETTINGS
+.bset:  cmp     dword loc(1), BA_GET_EDGE
+        jne     .bset2
+        lea     rcx, [s_edge_url]
+        call    os_open_url
+        jmp     .done
+.bset2: cmp     dword loc(1), BA_SETTINGS
         jne     .done
         cmp     dword [signed_in], 0
         je      .done                           ; signed out: the setup fields are already on screen

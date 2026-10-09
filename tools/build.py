@@ -10,7 +10,7 @@ import os, shutil, subprocess, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILD = os.path.join(ROOT, "build")
-LIBS = "kernel32 user32 gdi32 gdiplus shell32 shlwapi winhttp ws2_32 bcrypt crypt32 ole32 ntdll".split()
+LIBS = "kernel32 user32 gdi32 gdiplus shell32 shlwapi winhttp ws2_32 bcrypt crypt32 ole32 ntdll advapi32".split()
 
 
 def tool(env, *names):

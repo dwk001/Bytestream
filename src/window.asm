@@ -577,6 +577,7 @@ PROC wndproc, 12
         mov     ebx, eax
         call    auth_tick
         or      ebx, eax
+        call    edge_tick
         mov     rcx, [toast_text]
         test    rcx, rcx
         jz      .tk2

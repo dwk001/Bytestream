@@ -35,7 +35,8 @@ extern PeekMessageW, GetTickCount64
 %define TAG_DEBUG  1
 %define TAG_TOKEN  2                    ; OAuth token endpoint answered (arg 0 = code exchange, 1 = session restore)
 %define TAG_ME     3                    ; GET /v1/me answered: sign-in complete
-%define TAG_COUNT  4                    ; grows as handlers are added
+%define TAG_PLAY   4                    ; PUT /me/player/play answered
+%define TAG_COUNT  5                    ; grows as handlers are added
 
 section .bss
 nq_head:        resq 2
@@ -65,6 +66,7 @@ net_handlers:
         dq h_debug
         dq h_token
         dq h_me
+        dq h_play
 
 section .text
 

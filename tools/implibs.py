@@ -13,7 +13,9 @@ IMPORTS = {
         CloseHandle GetLastError CreateThread GetCurrentThreadId Sleep GetTickCount64 GetEnvironmentVariableW
         SetEnvironmentVariableW GetFileSizeEx CreateDirectoryW GetStdHandle LocalFree GetModuleFileNameW
         QueryPerformanceCounter QueryPerformanceFrequency FlushFileBuffers GetFileAttributesW DeleteFileW
-        CreateEventW SetEvent WaitForSingleObject GetSystemTimeAsFileTime GetLocalTime SetUnhandledExceptionFilter MoveFileExW lstrcatW CreateMutexW GlobalAlloc GlobalLock GlobalUnlock GlobalFree""",
+        CreateEventW SetEvent WaitForSingleObject GetSystemTimeAsFileTime GetLocalTime SetUnhandledExceptionFilter MoveFileExW lstrcatW CreateMutexW GlobalAlloc GlobalLock GlobalUnlock GlobalFree
+        CreateJobObjectW SetInformationJobObject AssignProcessToJobObject TerminateProcess GetExitCodeProcess ResumeThread
+        ExpandEnvironmentStringsW CreateProcessW""",
     "user32": """RegisterClassExW CreateWindowExW DefWindowProcW ShowWindow UpdateWindow GetMessageW TranslateMessage
         DispatchMessageW PostQuitMessage PostMessageW PostThreadMessageW SendMessageW BeginPaint EndPaint InvalidateRect
         GetClientRect GetWindowRect LoadCursorW SetCursor GetDC ReleaseDC SetTimer KillTimer MoveWindow DestroyWindow
@@ -45,18 +47,12 @@ IMPORTS = {
     "crypt32": """CryptProtectData CryptUnprotectData""",
     "ole32": """CoInitializeEx CoUninitialize CoTaskMemFree CoCreateInstance""",
     "ntdll": """RtlGetVersion""",
+    "advapi32": """RegOpenKeyExW RegQueryValueExW RegCloseKey""",
 }
-
-# The WebView2 loader ships beside the exe, so it is delay-bound: see player.asm.
-EXTRA = {
-    "WebView2Loader": "CreateCoreWebView2EnvironmentWithOptions",
-}
-
 
 def main(out):
     os.makedirs(out, exist_ok=True)
     tables = dict(IMPORTS)
-    tables.update({k: v for k, v in EXTRA.items()})
     for dll, names in tables.items():
         fn = sorted(set(names.split()))
         deff = os.path.join(out, dll + ".def")

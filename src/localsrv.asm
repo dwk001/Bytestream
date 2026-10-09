@@ -71,7 +71,9 @@ ZSTR r_h1, "HTTP/1.1 "
 ZSTR r_h2, `\r\nContent-Type: `
 ZSTR r_h3, `\r\nContent-Length: `
 ZSTR r_h4, `\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n`
-ZSTR r_csp_page, `Content-Security-Policy: default-src 'self'; script-src 'self' https://sdk.scdn.co; connect-src 'self' https://*.spotify.com wss://*.spotify.com https://*.scdn.co wss://*.scdn.co; img-src 'self' data: https://*.scdn.co https://*.spotifycdn.com; media-src * blob:; frame-src https://sdk.scdn.co; style-src 'self' 'unsafe-inline'\r\n`
+; Deliberately not a script/connect allow-list: the Spotify SDK loads its own frame, workers and DRM helpers from several
+; Spotify hosts, and a too-strict policy would silently break playback.  These directives cannot affect loading.
+ZSTR r_csp_page, `Content-Security-Policy: frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'\r\n`
 ZSTR r_csp_none, `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'\r\n`
 ZSTR r_end, `\r\n`
 ZSTR r_sse_head, `HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n: connected\n\n`
@@ -948,13 +950,7 @@ PROC srv_conn, 12
         jmp     .drop
 .page_js:
         test    r12d, r12d
-        jz      .notallowed
-        mov     rcx, loc(4)
-        mov     rdx, loc(7)
-        add     rdx, 96
-        call    srv_check_secret
-        test    eax, eax
-        jz      .rej_secret
+        jz      .notallowed                     ; (no secret needed: the script is public source and holds no secrets)
         lea     rax, [srv_js_end]
         lea     rcx, [srv_js_start]
         sub     rax, rcx
@@ -1175,35 +1171,10 @@ lstrcpyA_z:
         jnz     .l
         ret
 
-; ---------------------------------------------------------------- UI-thread side of the bridge (milestone 3 fills this in)
-; rcx = heap JSON from the player page, rdx = length.  Takes ownership.
-PROC bridge_event, 4
-        mov     loc(0), rcx
-        mov     loc(1), rdx
-        BUFZERO 4
-        lea     rcx, loc(4)
-        lea     rdx, [l_bridge]
-        call    buf_append_z
-        mov     r8, loc(1)
-        cmp     r8, 200
-        jbe     .n
-        mov     r8d, 200
-.n:     lea     rcx, loc(4)
-        mov     rdx, loc(0)
-        call    buf_append
-        mov     rcx, loc(4)
-        call    log_msg
-        lea     rcx, loc(4)
-        call    buf_free
-        mov     rcx, loc(0)
-        call    mem_free
-        EPROC
-
 section .data
 align 4
 srv_rcv_timeout: dd 10000
 ZSTR s_host_pre, "127.0.0.1:"
-ZSTR l_bridge, "bridge event: "
 ZSTR l_announce, "player-url:http://127.0.0.1:"
 ZSTR l_announce2, "/player?k="
 section .text

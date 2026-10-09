@@ -1,12 +1,6 @@
 ; stubs.asm - placeholders for the live-Spotify pieces that land in later milestones.
 ; Each one is replaced by a real implementation; until then the app runs in --demo mode only.
 
-real_play_list:
-real_toggle:
-real_next:
-real_prev:
-real_seek:
-real_set_volume:
 real_load_detail:
 real_search:
 fetch_image_async:

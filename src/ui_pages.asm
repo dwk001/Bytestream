@@ -85,6 +85,7 @@ WSTR w_cancel, "Cancel"
 WSTR w_diag, "Diagnostics"
 WSTR w_open_log, "Open log folder"
 WSTR w_copy_diag, "Copy diagnostics"
+WSTR w_test_audio, "Test audio"
 WSTR w_diag_hint, "If something goes wrong, copy the diagnostics and send them with your report. Tokens are never logged."
 WSTR w_no_results, "No results"
 
@@ -834,6 +835,24 @@ PROC page_settings, 8
         mov     r9d, eax
         mov     outarg(5), rdi
         mov     qword outarg(6), H_COPY_DIAG
+        mov     qword outarg(7), 0
+        mov     qword outarg(8), 1
+        call    draw_button
+        lea     rcx, [w_test_audio]
+        S       160
+        mov     edx, [pg_x]
+        add     edx, eax
+        S       12
+        add     edx, eax
+        S       170
+        add     edx, eax
+        S       12
+        add     edx, eax
+        mov     r8d, r12d
+        S       130
+        mov     r9d, eax
+        mov     outarg(5), rdi
+        mov     qword outarg(6), H_TEST_AUDIO
         mov     qword outarg(7), 0
         mov     qword outarg(8), 1
         call    draw_button

@@ -28,6 +28,13 @@ jobs:
         shell: pwsh
         run: python tools/build.py
 
+      - name: Playwright (drives the preinstalled Edge for the player page test)
+        shell: pwsh
+        run: |
+          npm install --prefix "$env:RUNNER_TEMP\pw" playwright@1.56.1 --no-audit --no-fund
+          "PLAYWRIGHT_PATH=$env:RUNNER_TEMP\pw\node_modules\playwright" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PW_CHANNEL=msedge" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Test (runs the real .exe on Windows)
         shell: pwsh
         run: python tests/run_tests.py

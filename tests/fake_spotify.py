@@ -35,6 +35,7 @@ class State:
         self.forbid_me = False    # /v1/me answers 403 (account not on the allow-list)
         self.rotate_refresh = False
         self.fail_next = {}       # path-prefix -> (status, retry_after)
+        self.play_reply = None    # (status, json) answer for PUT /v1/me/player/play instead of 204
 
 
 STATE = State()
@@ -95,6 +96,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._token(urllib.parse.parse_qs(body.decode()))
         if u.path == "/v1/me":
             return self._me()
+        if u.path == "/v1/me/player/play" and self.command == "PUT":
+            return self._play(q)
         if u.path == "/echo":
             return self._send(200, {"method": entry["method"], "path": entry["path"],
                                     "headers": entry["headers"], "body": entry["body"]})
@@ -168,6 +171,19 @@ class Handler(BaseHTTPRequestHandler):
             if STATE.forbid_me:
                 return self._send(403, {"error": {"status": 403, "message": "User not registered in the Developer Dashboard"}})
         self._send(200, fixture("me.json"))
+
+    def _play(self, q):
+        auth = self.headers.get("Authorization", "")
+        with STATE.lock:
+            tok = auth[7:] if auth.startswith("Bearer ") else ""
+            if STATE.access.get(tok, 0) < time.time():
+                return self._send(401, {"error": {"status": 401, "message": "The access token expired"}})
+            if STATE.play_reply:
+                status, obj = STATE.play_reply
+                return self._send(status, obj)
+        if not q.get("device_id"):
+            return self._send(404, {"error": {"status": 404, "reason": "NO_ACTIVE_DEVICE", "message": "No active device found"}})
+        self._send(204)
 
     do_GET = do_POST = do_PUT = do_DELETE = _handle
 
