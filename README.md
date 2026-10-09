@@ -12,7 +12,9 @@ open in Spotify ...), playlist create / rename / delete, add and remove tracks, 
 
 > Everything is controlled from the window. There is no config file to edit and no command line to learn.
 
-Everything on screen is drawn and handled by ByteStream itself, including the text boxes (caret, selection with the mouse
+Cover art is decoded by ByteStream's own PNG and JPEG decoders (DEFLATE, Huffman, integer IDCT - all assembly, on the
+download threads, a 640 px cover in about 7 ms); only formats it does not know (progressive JPEG, GIF ...) are passed to
+Windows' GDI+. Everything on screen is drawn and handled by ByteStream itself, including the text boxes (caret, selection with the mouse
 or Shift+arrows, Ctrl+arrows by word, copy / cut / paste, Tab between boxes) and the animations (hover fades, smooth wheel
 scrolling, the queue panel and the full-screen view sliding). Nothing animates while nothing moves: an idle window draws
 nothing and uses no CPU.
@@ -103,6 +105,7 @@ Developer flags (for the tests; normal use needs none):
 | `--click X,Y` `--drag-to X,Y` | press / release the left button at a position through the real mouse path |
 | `--anim` `--anim-hold P` `--shot-ms N` | keep animations on in a `--dump` / `--screenshot` run, freeze the sliding panels at P %, take the screenshot after N ms |
 | `--clip-in TEXT` | what Ctrl+V pastes in a `--no-browser` run |
+| `--decode FILE` `--decode-out RAW` `--decode-fuzz N` | run a picture through the program's own decoders (size, BGRA dump, damaged-copy fuzzing) |
 | `--act-late` `--ctx-late` `--hold` | the same, driven by a fake player page |
 | `--dump` | print the app state as `key=value` lines |
 | `--screenshot FILE.bmp` | save the frame and exit |

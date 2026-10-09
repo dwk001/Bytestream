@@ -36,6 +36,10 @@ jobs:
           "PLAYWRIGHT_PATH=$env:RUNNER_TEMP\pw\node_modules\playwright" | Out-File -FilePath $env:GITHUB_ENV -Append
           "PW_CHANNEL=msedge" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+      - name: Pillow and numpy (reference JPEG decoding for the decoder tests)
+        shell: pwsh
+        run: python -m pip install --quiet pillow numpy
+
       - name: Test (runs the real .exe on Windows)
         shell: pwsh
         timeout-minutes: 30

@@ -34,7 +34,7 @@ IMPORTS = {
         GdipDrawString GdipMeasureString GdipCreateBitmapFromStream GdipCreateBitmapFromScan0 GdipDisposeImage
         GdipDrawImageRectI GdipGetImageWidth GdipGetImageHeight GdipGetImageGraphicsContext GdipBitmapGetPixel
         GdipSetClipRectI GdipResetClip GdipGraphicsClear GdipFillRectangle GdipSetCompositingQuality
-        GdipSetPixelOffsetMode GdipCreateLineBrushI GdipDeleteBrush GdipSetLineLinearBlend GdipFillPie GdipStringFormatGetGenericTypographic GdipCloneStringFormat GdipResetWorldTransform GdipTranslateWorldTransform GdipFillPieI
+        GdipSetPixelOffsetMode GdipCreateLineBrushI GdipDeleteBrush GdipSetLineLinearBlend GdipFillPie GdipBitmapLockBits GdipBitmapUnlockBits GdipStringFormatGetGenericTypographic GdipCloneStringFormat GdipResetWorldTransform GdipTranslateWorldTransform GdipFillPieI
         GdipSetClipPath GdipSetLineColors GdipSetPenLineJoin GdipSetPenWidth GdipSetCompositingMode""",
     "shell32": """CommandLineToArgvW ShellExecuteW SHGetFolderPathW SHCreateDirectoryExW""",
     "shlwapi": """SHCreateMemStream""",

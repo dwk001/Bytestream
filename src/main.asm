@@ -21,6 +21,8 @@ text_begin:
 %include "theme.asm"
 %include "gfx.asm"
 %include "icons.asm"
+%include "png.asm"
+%include "jpeg.asm"
 %include "img.asm"
 %include "player.asm"
 %include "ui_core.asm"
@@ -90,6 +92,10 @@ cli_run_ms:     resd 1                  ; --run-ms N: keep running N ms after th
 run_t0:         resq 1
 cli_dlg_name:    resq 1                  ; --dlg-name / --dlg-desc: text that appears in the dialog fields when it opens (tests)
 cli_dlg_desc:    resq 1
+                align 8
+cli_decode:     resq 1
+cli_decode_out: resq 1
+cli_fuzz:       resd 1
 cli_anim:       resd 1                  ; --anim
 cli_click:      resd 1
 cli_cx:         resd 1
@@ -128,6 +134,9 @@ WSTR a_imgb, "--img-budget"
 WSTR a_nobrowser, "--no-browser"
 WSTR a_hold, "--hold"
 WSTR a_anim, "--anim"
+WSTR a_decode, "--decode"
+WSTR a_decodeout, "--decode-out"
+WSTR a_decodefuzz, "--decode-fuzz"
 WSTR a_click, "--click"
 WSTR a_dragto, "--drag-to"
 WSTR a_clipin, "--clip-in"
@@ -203,6 +212,8 @@ ZSTR d_fcaret, "field_caret="
 ZSTR d_fanch, "field_anchor="
 ZSTR d_fscroll, "field_scroll="
 ZSTR d_ftext, "field"
+ZSTR d_iown, "images_own="
+ZSTR d_igdip, "images_gdip="
 ZSTR d_afr, "anim_frames="
 ZSTR d_aon, "anim_on="
 ZSTR d_abusy, "anim_busy="
@@ -624,6 +635,32 @@ PROC parse_cli, 4
         mov     [cli_shot_ms], eax              ; --shot-ms N: take the screenshot N ms after start (animations mid-way)
         inc     qword loc(2)
         jmp     .next
+.b16n:  mov     rcx, rbx
+        lea     rdx, [a_decodefuzz]
+        call    arg_is
+        test    eax, eax
+        jz      .b17
+        mov     rcx, rsi
+        call    w_atoi
+        mov     [cli_fuzz], eax                 ; --decode-fuzz N (with --decode): N damaged copies must decode or fail, never crash
+        inc     qword loc(2)
+        jmp     .next
+.b16l:  mov     rcx, rbx
+        lea     rdx, [a_decode]
+        call    arg_is
+        test    eax, eax
+        jz      .b16m
+        mov     [cli_decode], rsi               ; --decode FILE: decode an image with our own decoders and print its size
+        inc     qword loc(2)
+        jmp     .next
+.b16m:  mov     rcx, rbx
+        lea     rdx, [a_decodeout]
+        call    arg_is
+        test    eax, eax
+        jz      .b16n
+        mov     [cli_decode_out], rsi           ; --decode-out FILE: ... and write the BGRA pixels there
+        inc     qword loc(2)
+        jmp     .next
 .b16j:  mov     rcx, rbx
         lea     rdx, [a_click]
         call    arg_is
@@ -640,7 +677,7 @@ PROC parse_cli, 4
         lea     rdx, [a_dragto]
         call    arg_is
         test    eax, eax
-        jz      .b17
+        jz      .b16l
         mov     rcx, rsi
         call    w_pair
         mov     [cli_dx], eax                   ; --drag-to X,Y: ... and release it there instead (after moving there)
@@ -1247,6 +1284,8 @@ PROC dump_state, 4
         inc     r12d
         cmp     r12d, FLD_N
         jb      .fl
+        DUMPNUM d_iown, dword [img_own_n]
+        DUMPNUM d_igdip, dword [img_gdip_n]
         DUMPNUM d_afr, dword [anim_frames]
         DUMPNUM d_aon, dword [anim_on]
         DUMPNUM d_abusy, dword [anim_busy]
@@ -1452,6 +1491,158 @@ section .data
 WSTR hdr_probe, `Authorization: Bearer probe-token\r\nContent-Type: application/json\r\nX-ByteStream: probe\r\n`
 section .text
 
+section .data
+ZSTR d_dec_w, "w="
+ZSTR d_dec_h, "h="
+ZSTR d_dec_ms, "ms_per_10="
+ZSTR d_dec_fail, "decode failed"
+ZSTR d_fuzz_ok, "fuzz ok "
+section .text
+
+; --decode-fuzz N: decodes N copies of the file with a few random bytes changed each; prints "fuzz ok N" (a crash would
+; end the process before that)
+PROC decode_fuzz, 8
+        mov     rcx, [cli_decode]
+        call    file_read_all
+        test    rax, rax
+        jz      .bad
+        mov     loc(0), rax
+        mov     loc(1), rdx
+        lea     rcx, [rdx+16]
+        call    mem_alloc
+        mov     loc(2), rax
+        mov     r12d, 12345                     ; xorshift32 state
+        xor     r13d, r13d
+.it:    cmp     r13d, [cli_fuzz]
+        jae     .done
+        mov     rcx, loc(2)
+        mov     rdx, loc(0)
+        mov     r8, loc(1)
+        call    mem_copy
+        lea     r14d, [r13+3]
+        and     r14d, 7
+        inc     r14d                            ; 1 .. 8 bytes changed
+.mut:   mov     eax, r12d
+        shl     eax, 13
+        xor     r12d, eax
+        mov     eax, r12d
+        shr     eax, 17
+        xor     r12d, eax
+        mov     eax, r12d
+        shl     eax, 5
+        xor     r12d, eax
+        mov     eax, r12d
+        xor     edx, edx
+        mov     ecx, dword loc(1)
+        div     ecx                             ; edx = position in the file
+        mov     rax, loc(2)
+        mov     ecx, r12d
+        shr     ecx, 8
+        mov     [rax+rdx], cl
+        dec     r14d
+        jnz     .mut
+        mov     rcx, loc(2)
+        mov     rdx, loc(1)
+        call    img_decode_pixels
+        mov     rcx, rax
+        call    mem_free
+        inc     r13d
+        jmp     .it
+.done:  lea     rdi, [dump_buf]
+        mov     rcx, rdi
+        lea     rdx, [d_fuzz_ok]
+        call    dump_str
+        mov     rdi, rax
+        mov     rcx, rdi
+        mov     edx, [cli_fuzz]
+        call    u8_put_u64
+        mov     rdi, rax
+        mov     byte [rdi], 10
+        mov     byte [rdi+1], 0
+        lea     rcx, [dump_buf]
+        call    out_z
+        xor     eax, eax
+        jmp     .out
+.bad:   mov     eax, 1
+.out:   EPROC
+
+; --decode FILE [--decode-out RAW]: runs the picture through img_decode_pixels and prints its size
+PROC decode_probe, 8
+        mov     rcx, [cli_decode]
+        call    file_read_all
+        test    rax, rax
+        jz      .fail
+        mov     loc(0), rax
+        mov     loc(2), rdx
+        call    GetTickCount64
+        mov     loc(3), rax
+        mov     r12d, 10                        ; ten decodes: the time is printed per picture
+.bench: mov     rcx, loc(0)
+        mov     rdx, loc(2)
+        call    img_decode_pixels
+        test    rax, rax
+        jz      .fail
+        mov     loc(1), rax
+        dec     r12d
+        jz      .benchd
+        mov     rcx, rax
+        call    mem_free
+        jmp     .bench
+.benchd: call   GetTickCount64
+        sub     rax, loc(3)
+        mov     loc(3), rax
+        lea     rdi, [dump_buf]
+        mov     rcx, rdi
+        lea     rdx, [d_dec_w]
+        call    dump_str
+        mov     rdi, rax
+        mov     rcx, rdi
+        mov     rax, loc(1)
+        mov     edx, [rax]
+        call    u8_put_u64
+        mov     rdi, rax
+        mov     byte [rdi], 10
+        inc     rdi
+        mov     rcx, rdi
+        lea     rdx, [d_dec_h]
+        call    dump_str
+        mov     rdi, rax
+        mov     rcx, rdi
+        mov     rax, loc(1)
+        mov     edx, [rax+4]
+        call    u8_put_u64
+        mov     rdi, rax
+        mov     byte [rdi], 10
+        inc     rdi
+        mov     rcx, rdi
+        lea     rdx, [d_dec_ms]
+        call    dump_str
+        mov     rdi, rax
+        mov     rcx, rdi
+        mov     rdx, loc(3)                     ; ms for ten decodes
+        call    u8_put_u64
+        mov     rdi, rax
+        mov     byte [rdi], 10
+        mov     byte [rdi+1], 0
+        lea     rcx, [dump_buf]
+        call    out_z
+        mov     rcx, [cli_decode_out]
+        test    rcx, rcx
+        jz      .ok
+        mov     rax, loc(1)
+        mov     edx, [rax]
+        imul    edx, [rax+4]
+        shl     rdx, 2
+        mov     r8, rdx
+        lea     rdx, [rax+8]
+        call    file_write_all
+.ok:    xor     eax, eax
+        jmp     .out
+.fail:  lea     rcx, [d_dec_fail]
+        call    out_z
+        mov     eax, 1
+.out:   EPROC
+
 global start
 PROC start, 8
         call    core_init
@@ -1461,7 +1652,16 @@ PROC start, 8
         call    selftest
         mov     ecx, eax
         call    ExitProcess
-.nst:   cmp     qword [cli_http_url], 0
+.nst:   cmp     qword [cli_decode], 0
+        je      .nodec
+        cmp     dword [cli_fuzz], 0
+        je      .dprobe
+        call    decode_fuzz
+        jmp     .dexit
+.dprobe: call   decode_probe
+.dexit: mov     ecx, eax
+        call    ExitProcess
+.nodec: cmp     qword [cli_http_url], 0
         je      .gui
         call    http_init
         call    http_probe

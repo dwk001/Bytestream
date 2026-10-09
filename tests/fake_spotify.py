@@ -50,7 +50,7 @@ class State:
         self.fail_next = {}       # path-prefix -> (status, retry_after)
         self.play_reply = None    # (status, json) answer for PUT /v1/me/player/play instead of 204
         self.page_limit = None    # cap on the page size of paged endpoints (None = honour the request's limit)
-        self.real_images = False  # rewrite "demo:N" cover URLs to http://<this server>/img/N.png
+        self.real_images = False  # rewrite "demo:N" cover URLs to http://<this server>/img/N.png (or N.jpg when set to "jpg")
         self.forbidden_playlists = set()   # playlist ids whose /items answer 403
         self.empty_playlists = set()       # playlist ids whose /items answer 200 with no items but a total
         self.delay = {}           # path prefix -> seconds to wait before answering
@@ -212,7 +212,8 @@ class Handler(BaseHTTPRequestHandler):
         text = json.dumps(obj)
         if STATE.real_images:
             host = self.headers.get("Host", "127.0.0.1")
-            text = re.sub(r'"demo:(\d+)"', lambda m: '"http://%s/img/%s.png"' % (host, m.group(1)), text)
+            ext = "jpg" if STATE.real_images == "jpg" else "png"
+            text = re.sub(r'"demo:(\d+)"', lambda m: '"http://%s/img/%s.%s"' % (host, m.group(1), ext), text)
         self._send(status, raw=text.encode())
 
     def _paged(self, u, q, items, wrap=None, key="items"):
@@ -288,7 +289,11 @@ class Handler(BaseHTTPRequestHandler):
                 time.sleep(secs)
         if path.startswith("/img/"):
             n = int(re.sub(r"\D", "", path) or "0")
-            self._send(200, raw=png_for(n), ctype="image/png")
+            if path.endswith(".jpg"):
+                with open(os.path.join(FIX, "cover.jpg"), "rb") as f:
+                    self._send(200, raw=f.read(), ctype="image/jpeg")
+            else:
+                self._send(200, raw=png_for(n), ctype="image/png")
             return True
         if not self._authed():
             self._send(401, {"error": {"status": 401, "message": "The access token expired"}})

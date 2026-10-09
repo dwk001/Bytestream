@@ -23,6 +23,7 @@ extern PeekMessageW, GetTickCount64
 %define JB_FLAGS   104
 %define JB_RETRY   108
 %define JB_SEQ     112
+%define JB_PIX     120                  ; decoded cover {w, h, BGRA} made on the worker thread (0 = none)
 %define JB_SIZE    128
 
 %define JF_NOAUTH  1                    ; do not add the Authorization header (token endpoint, CDN images)
@@ -284,7 +285,17 @@ PROC net_worker, 2
         call    lock_release
         mov     rcx, rbx
         call    net_run_job
-        mov     rcx, [hwnd]
+        cmp     qword [rbx+JB_TAG], TAG_IMG     ; covers are decoded here, off the UI thread
+        jne     .post
+        cmp     dword [rbx+JB_STATUS], 200
+        jne     .post
+        mov     rcx, [rbx+JB_RESP+BUF_PTR]
+        test    rcx, rcx
+        jz      .post
+        mov     rdx, [rbx+JB_RESP+BUF_LEN]
+        call    img_decode_pixels
+        mov     [rbx+JB_PIX], rax
+.post:  mov     rcx, [hwnd]
         mov     edx, WM_NET_DONE
         mov     r8, rbx
         xor     r9d, r9d
@@ -437,6 +448,8 @@ PROC net_job_free, 0
         mov     rcx, [rbx+JB_HDRS]
         call    mem_free
         mov     rcx, [rbx+JB_RESP]
+        call    mem_free
+        mov     rcx, [rbx+JB_PIX]
         call    mem_free
         mov     rcx, rbx
         call    mem_free

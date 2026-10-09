@@ -3,7 +3,7 @@
 ;   "demo:<n>"  procedural artwork (used by --demo and the tests; no network needed)
 ;   anything else is fetched by the HTTP worker and delivered to img_set_data()
 
-extern GdipCreateLineBrushI, GetLocalTime, SHCreateMemStream
+extern GdipCreateLineBrushI, GetLocalTime, SHCreateMemStream, GdipBitmapLockBits, GdipBitmapUnlockBits
 
 ; An entry: url* (0), GpImage* (8), state (16), FNV-1a hash of the url (20), pixel bytes (24), frame last drawn (28),
 ; last use stamp (32).
@@ -24,6 +24,8 @@ img_cnt:        resd 1
 img_bytes:      resq 1                  ; pixel bytes held by READY entries
 img_clock:      resq 1                  ; bumped on every lookup: "last use" stamps
 img_frame:      resd 1                  ; bumped by every paint (hit_reset): covers drawn in this or the last frame stay
+img_own_n:      resd 1                  ; covers decoded by our own decoders / handed to GDI+ (--dump)
+img_gdip_n:     resd 1
 
 section .data
 align 8
@@ -125,9 +127,100 @@ PROC img_make_demo, 12
         mov     rax, loc(1)
         EPROC
 
+; rcx = data, rdx = length -> rax = {width, height, BGRA pixels} on the heap, or 0.  The program's own decoders: PNG
+; and baseline JPEG; anything else (progressive JPEG, GIF ...) comes back 0 and is left to GDI+.
+PROC img_decode_pixels, 2
+        cmp     rdx, 16
+        jb      .none
+        cmp     dword [rcx], 0x474E5089         ; 89 'P' 'N' 'G'
+        je      .png
+        cmp     word [rcx], 0xD8FF
+        jne     .none
+        jmp     .jpg
+.png:   call    png_decode
+        jmp     .out
+.jpg:   call    jpeg_decode
+        jmp     .out
+.none:  xor     eax, eax
+.out:   EPROC
+
+; rcx = {w, h, BGRA} block -> rax = a 32bpp ARGB GpBitmap holding those pixels (GDI+ owns its own copy), or 0
+PROC img_from_pixels, 12
+        mov     loc(0), rcx
+        mov     edx, [rcx+4]                    ; h
+        mov     ecx, [rcx]                      ; w
+        xor     r8d, r8d
+        mov     r9d, 0x26200A                   ; PixelFormat32bppARGB
+        mov     qword outarg(5), 0
+        lea     rax, loc(1)
+        mov     outarg(6), rax
+        call    GdipCreateBitmapFromScan0
+        test    eax, eax
+        jnz     .fail
+        mov     rax, loc(0)
+        lea     rcx, loc(3)                     ; GpRect {0, 0, w, h}
+        mov     dword [rcx], 0
+        mov     dword [rcx+4], 0
+        mov     edx, [rax]
+        mov     [rcx+8], edx
+        mov     edx, [rax+4]
+        mov     [rcx+12], edx
+        mov     rcx, loc(1)
+        lea     rdx, loc(3)
+        mov     r8d, 2                          ; ImageLockModeWrite
+        mov     r9d, 0x26200A
+        lea     rax, loc(7)                     ; BitmapData {w, h, stride, format, scan0, reserved}
+        mov     outarg(5), rax
+        call    GdipBitmapLockBits
+        test    eax, eax
+        jnz     .dispose
+        mov     rax, loc(0)
+        mov     r14d, [rax]                     ; w
+        mov     r13d, [rax+4]                   ; h
+        lea     rsi, [rax+8]
+        lea     r10, loc(7)
+        mov     r12, [r10+16]                   ; first destination row
+        movsxd  r15, dword [r10+8]              ; stride in bytes
+        xor     ebx, ebx
+.row:   cmp     ebx, r13d
+        jae     .rows
+        mov     rdi, r12
+        mov     ecx, r14d
+        rep     movsd
+        add     r12, r15
+        inc     ebx
+        jmp     .row
+.rows:  mov     rcx, loc(1)
+        lea     rdx, loc(7)
+        call    GdipBitmapUnlockBits
+        mov     rax, loc(1)
+        jmp     .out
+.dispose:
+        mov     rcx, loc(1)
+        call    GdipDisposeImage
+.fail:  xor     eax, eax
+.out:   EPROC
+
 ; rcx = data, rdx = length -> rax = detached 32bpp GpBitmap (or 0).  GDI+ decodes lazily from the
 ; stream, so the pixels are copied into a fresh bitmap and the stream is released straight away.
 PROC img_decode, 10
+        mov     loc(7), rcx
+        mov     loc(8), rdx
+        call    img_decode_pixels               ; our own PNG / JPEG decoders first
+        test    rax, rax
+        jz      .gdip
+        mov     loc(9), rax
+        mov     rcx, rax
+        call    img_from_pixels
+        mov     loc(4), rax
+        mov     rcx, loc(9)
+        call    mem_free
+        inc     dword [img_own_n]
+        mov     rax, loc(4)
+        jmp     .out
+.gdip:  inc     dword [img_gdip_n]              ; anything else (progressive JPEG, GIF, BMP ...) is GDI+'s
+        mov     rcx, loc(7)
+        mov     rdx, loc(8)
         mov     qword loc(4), 0
         call    SHCreateMemStream
         mov     loc(0), rax                     ; IStream*
@@ -401,14 +494,20 @@ PROC img_account, 6
         jmp     .over
 .out:   EPROC
 
-; rcx = URL, rdx = encoded image bytes (0 = the download failed), r8 = length.  Called on the UI thread when a
-; download finishes.
+; rcx = URL, rdx = encoded image bytes (0 = the download failed), r8 = length, r9 = pixels the worker already decoded
+; ({w, h, BGRA}, or 0).  Called on the UI thread when a download finishes.
 PROC img_set_data, 4
         mov     loc(0), rcx
         xor     eax, eax
         test    rdx, rdx
         jz      .nodata                         ; remember the failure instead of retrying forever
-        mov     rcx, rdx
+        test    r9, r9
+        jz      .slow
+        mov     rcx, r9
+        call    img_from_pixels
+        inc     dword [img_own_n]
+        jmp     .nodata
+.slow:  mov     rcx, rdx
         mov     rdx, r8
         call    img_decode
 .nodata:

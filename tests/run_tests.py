@@ -193,7 +193,12 @@ class FakePage:
     def post(self, obj):
         c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=15)
         c.request("POST", f"/bridge/event?k={self.k}", body=json.dumps(obj), headers={"Content-Type": "application/json"})
-        r = c.getresponse()
+        try:
+            r = c.getresponse()
+        except (http.client.RemoteDisconnected, ConnectionError):
+            if obj.get("type") == "quit":      # the app may exit on "quit" before it has answered
+                return 200
+            raise
         r.read()
         c.close()
         return r.status
@@ -915,6 +920,12 @@ def main():
         check(len(imgs) > 0 and all("Authorization" not in e["headers"] for e in imgs),
               "covers: images are downloaded without the Spotify token", str(len(imgs)))
         check(int(st.get("images_ready", "0")) > 0, "covers: downloaded PNGs decode into the cache", str(st))
+        check(int(st.get("images_own", "0")) > 0 and st.get("images_gdip") == "0", "covers: PNGs are decoded by our own decoder, not GDI+", str((st.get("images_own"), st.get("images_gdip"))))
+        S.real_images = "jpg"
+        st, paths = live([], reset=False)
+        check(int(st.get("images_ready", "0")) > 0 and int(st.get("images_own", "0")) > 0 and st.get("images_gdip") == "0",
+              "covers: JPEGs are decoded by our own decoder too", str((st.get("images_ready"), st.get("images_own"), st.get("images_gdip"))))
+        S.real_images = True
 
         S.log.clear()
         st, paths = live(["--img-budget", "20", "--act", f"{H_NAV},{PAGE_SETTINGS}"], reset=False)
@@ -1389,6 +1400,115 @@ def main():
             os.remove(path)
         else:
             check(False, "drawing: screenshot with typed text")
+
+    if ONLY in (None, 'm8'):
+        # ---- M8c: our own PNG and JPEG decoders, against references made by other programs
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import pngenc
+        import random as _random
+
+        def decode_file(data, ext, extra=()):
+            dd = tempfile.mkdtemp(prefix="bs-dec-")
+            src, dst = os.path.join(dd, "a." + ext), os.path.join(dd, "a.raw")
+            with open(src, "wb") as f:
+                f.write(data)
+            rc, text, st, _ = run(["--decode", win_path(src), "--decode-out", win_path(dst)] + list(extra))
+            raw = open(dst, "rb").read() if os.path.exists(dst) else None
+            shutil.rmtree(dd, ignore_errors=True)
+            return rc, text, st, raw
+
+        rnd = _random.Random(11)
+        for (ct, depth, inter, sz) in [(0, 1, False, (13, 7)), (0, 2, True, (9, 9)), (0, 4, False, (17, 5)), (0, 8, False, (33, 11)), (0, 16, True, (11, 13)),
+                                       (2, 8, False, (23, 19)), (2, 8, True, (31, 17)), (2, 16, False, (7, 9)), (3, 1, False, (21, 6)), (3, 4, True, (19, 21)),
+                                       (3, 8, False, (25, 25)), (4, 8, False, (14, 15)), (4, 16, True, (10, 12)), (6, 8, False, (29, 13)), (6, 8, True, (37, 23)),
+                                       (6, 16, False, (8, 8)), (6, 8, False, (1, 1))]:
+            w, h = sz
+            px = pngenc.random_image(w, h, ct, depth, rnd)
+            pal = trns = None
+            if ct == 3:
+                n = 1 << depth
+                pal = [tuple(rnd.randrange(256) for _ in range(3)) for _ in range(n)]
+                px = [[(rnd.randrange(n),) for _ in range(w)] for _ in range(h)]
+                trns = bytes(rnd.randrange(256) for _ in range(max(1, n // 2)))
+            elif ct == 0:
+                trns = px[0][0][0].to_bytes(2, "big")
+            elif ct == 2:
+                trns = b"".join(v.to_bytes(2, "big") for v in px[0][0])
+            png = pngenc.encode(w, h, ct, depth, px, palette=pal, trns=trns, interlace=inter, rnd=rnd)
+            rc, text, st, raw = decode_file(png, "png")
+            check(raw == pngenc.expected_bgra(w, h, ct, depth, px, pal, trns) and st.get("w") == str(w) and st.get("h") == str(h),
+                  f"png: colour type {ct}, {depth} bit{'s' if depth > 1 else ''}{', interlaced' if inter else ''}, {w}x{h}", text.strip()[:120])
+        for (lvl, label) in ((9, "dynamic Huffman codes with long matches"), (0, "stored blocks"), (1, "fixed Huffman codes")):
+            w, h = 160, 90
+            px = pngenc.random_image(w, h, 2, 8, rnd, smooth=True)
+            png = pngenc.encode(w, h, 2, 8, px, filters=[0, 1, 2, 3, 4], rnd=rnd, level=lvl)
+            rc, text, st, raw = decode_file(png, "png")
+            check(raw == pngenc.expected_bgra(w, h, 2, 8, px), f"png: {label}", text.strip()[:120])
+        rc, text, st, raw = decode_file(png[:len(png) // 2], "png")
+        check(rc == 1 and raw is None, "png: a truncated file is refused, not half-drawn", text.strip()[:120])
+        rc, text, st, raw = decode_file(b"GIF89a" + bytes(100), "gif")
+        check(rc == 1 and "decode failed" in text, "formats we do not decode (GIF ...) are handed on to GDI+", text.strip()[:120])
+        rc, text, st, _ = decode_file(png, "png", ["--decode-fuzz", "1500"])
+        check(rc == 0 and "fuzz ok 1500" in text, "png: 1500 damaged copies decode or fail, none crashes", text.strip()[:120])
+
+        try:
+            import io as _io
+            import numpy as _np
+            from PIL import Image as _Image
+        except ImportError:
+            _Image = None
+            print("note: Pillow / numpy missing, the JPEG decoder is not compared with libjpeg here")
+        if _Image is not None:
+            def photo(w, h, seed=3):
+                g = _np.random.default_rng(seed)
+                yy, xx = _np.mgrid[0:h, 0:w]
+                base = _np.stack([xx * 255 // max(1, w - 1), yy * 255 // max(1, h - 1), (xx + yy) * 255 // max(1, w + h - 2)], axis=-1).astype(float)
+                for _ in range(6):
+                    cx, cy, rr = g.integers(0, w), g.integers(0, h), g.integers(6, max(7, w // 3))
+                    base[((xx - cx) ** 2 + (yy - cy) ** 2) < rr * rr] = g.integers(0, 255, 3)
+                return _np.clip(base + g.normal(0, 10, (h, w, 3)), 0, 255).astype(_np.uint8)
+
+            def jpeg_case(name, img, exact, mean_max=None, **kw):
+                b = _io.BytesIO()
+                img.save(b, "JPEG", **kw)
+                data = b.getvalue()
+                w, h = img.size
+                ref = _np.asarray(_Image.open(_io.BytesIO(data)).convert("RGB")).astype(int)
+                rc, text, st, raw = decode_file(data, "jpg")
+                if raw is None or len(raw) != w * h * 4:
+                    check(False, name, text.strip()[:120])
+                    return data
+                got = _np.frombuffer(raw, dtype=_np.uint8).reshape(h, w, 4)[..., [2, 1, 0]].astype(int)
+                diff = _np.abs(got - ref)
+                ok = (diff.max() <= 1) if exact else (diff.mean() <= mean_max)
+                check(ok, name, f"mean {diff.mean():.2f} max {diff.max()}")
+                return data
+
+            im = _Image.fromarray(photo(97, 61))
+            jpeg_case("jpeg: 4:4:4 matches libjpeg to within one level", im, True, quality=92, subsampling=0)
+            jpeg_case("jpeg: low quality 4:4:4 matches libjpeg", im, True, quality=40, subsampling=0)
+            jpeg_case("jpeg: grey scale matches libjpeg", im.convert("L"), True, quality=85)
+            jpeg_case("jpeg: restart intervals (4:4:4) match libjpeg", im, True, quality=85, subsampling=0, restart_marker_blocks=3)
+            jpeg_case("jpeg: optimised Huffman tables match libjpeg", im, True, quality=85, subsampling=0, optimize=True)
+            jpeg_case("jpeg: 4:2:0 (chroma replicated, libjpeg interpolates) is close", im, False, mean_max=4.5, quality=85, subsampling=2)
+            jpeg_case("jpeg: 4:2:2 is close", im, False, mean_max=4.5, quality=85, subsampling=1)
+            jpeg_case("jpeg: 4:2:0 with restart intervals is close", im, False, mean_max=4.5, quality=85, subsampling=2, restart_marker_blocks=2)
+            jpeg_case("jpeg: odd sizes (1x1, 7x3) work", _Image.fromarray(photo(7, 3)), False, mean_max=6, quality=90)
+            big = _Image.fromarray(photo(300, 200))
+            data = jpeg_case("jpeg: a larger picture is close too", big, False, mean_max=4.0, quality=85, subsampling=2)
+            b = _io.BytesIO()
+            im.save(b, "JPEG", quality=85, progressive=True)
+            rc, text, st, raw = decode_file(b.getvalue(), "jpg")
+            check(rc == 1 and "decode failed" in text, "jpeg: progressive files are handed on to GDI+", text.strip()[:120])
+            rc, text, st, raw = decode_file(data[:len(data) // 2], "jpg")
+            check(rc == 0 or rc == 1, "jpeg: a truncated file does not crash", text.strip()[:120])
+            rc, text, st, _ = decode_file(data, "jpg", ["--decode-fuzz", "1500"])
+            check(rc == 0 and "fuzz ok 1500" in text, "jpeg: 1500 damaged copies decode or fail, none crashes", text.strip()[:120])
+            b = _io.BytesIO()
+            big.save(b, "JPEG", quality=90, subsampling=2)
+            rc, text, st, raw = decode_file(b.getvalue(), "jpg")
+            ms = int(st.get("ms_per_10", "9999"))
+            check(ms < 1500, "jpeg: a 300x200 picture decodes in well under 150 ms (here: %.1f ms)" % (ms / 10), text.strip()[:120])
 
     # ---- the harness itself must fail loudly when a target is absent
     rc, out, st, _ = run(["--demo", "--act", "99,0"])

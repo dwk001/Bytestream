@@ -640,10 +640,12 @@ PROC h_img, 2
         mov     rsi, rcx
         xor     edx, edx
         xor     r8d, r8d
+        xor     r9d, r9d
         cmp     dword [rsi+JB_STATUS], 200
         jne     .set
         mov     rdx, [rsi+JB_RESP+BUF_PTR]      ; the response Buf is embedded in the job
         mov     r8, [rsi+JB_RESP+BUF_LEN]
+        mov     r9, [rsi+JB_PIX]                ; already decoded by the worker, when our decoders could read it
 .set:   mov     rcx, [rsi+JB_URL]
         call    img_set_data
         mov     rcx, [hwnd]
