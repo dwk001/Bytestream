@@ -1127,6 +1127,11 @@ def main():
                   "create: name, description and public arrive intact (quotes, backslash and accents escaped)", str(b))
             check(posts[0]["headers"].get("Content-Type") == "application/json", "create: JSON content type")
         check(st.get("playlists") == "11" and st.get("dialog") == "0", "create: the new playlist appears and the dialog closes", str(st))
+        st, reqs = live6(["--act", f"{H_NEW_PL},0", "--dlg-name", "Enter key", "--act", "61440,13"])
+        check(len([e for e in reqs if e["method"] == "POST" and e["path"] == "/v1/me/playlists"]) == 1 and st.get("dialog") == "0",
+              "dialog: Enter in the name field creates the playlist", str(st))
+        st, reqs = live6(["--act", f"{H_NEW_PL},0", "--dlg-name", "Escaped", "--act", "61440,27"])
+        check(not [e for e in reqs if e["method"] == "POST"] and st.get("dialog") == "0", "dialog: Esc in the name field cancels it", str(st))
         st, reqs = live6(["--act", f"{H_NEW_PL},0", "--dlg-name", "   ", "--act", f"{H_DLG_OK},0"])
         check(not [e for e in reqs if e["method"] == "POST"] and st.get("dialog") == "1", "create: a blank name is refused and the dialog stays open", str(st))
 

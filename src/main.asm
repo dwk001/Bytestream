@@ -825,6 +825,15 @@ PROC run_act_at, 2
         call    net_wait_idle                   ; let requests started by earlier actions finish (a page's tracks, say)
         mov     rcx, [hwnd]
         call    UpdateWindow                    ; paint what arrived since the last frame, so the hit list is current
+        cmp     r12d, 0xF000                    ; pseudo target: a key press (code in the argument) in the dialog's name field
+        jne     .real
+        mov     rcx, [edit_dn]
+        mov     edx, 0x0100                     ; WM_KEYDOWN
+        mov     r8d, r13d
+        xor     r9d, r9d
+        call    SendMessageW
+        jmp     .painted
+.real:
         xor     esi, esi
 .find:  cmp     esi, [hit_n]
         jae     .missing
@@ -1287,6 +1296,7 @@ PROC start, 8
         mov     ecx, ID_EDIT_DD
         call    make_edit
         mov     [edit_dd], rax
+        call    edits_subclass
         call    edit_fill_from_settings
         mov     rcx, [edit_search]
         mov     edx, 0x1501                     ; EM_SETCUEBANNER

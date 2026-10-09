@@ -46,7 +46,85 @@ WSTR w_dlg_q2, "? It will disappear from your library."
 WSTR w_dlg_q2b, " from your library?"
 WSTR w_dlg_noname, "Give the playlist a name first."
 WSTR w_quote_w, `"`
+%define WM_DLG_OK     (WM_APP + 4)
+%define WM_DLG_CANCEL (WM_APP + 5)
+%define WM_SEARCH_NOW (WM_APP + 6)
+
+extern CallWindowProcW, SetWindowLongPtrW
+
+section .bss
+edit_orig_proc: resq 1                  ; the EDIT class's own window procedure (we sit in front of it)
+
+section .data
+align 8
+edit_ptrs:      dq edit_search, edit_client, edit_port, edit_dn, edit_dd
+
 section .text
+
+; Window procedure placed in front of the EDIT controls: Enter confirms and Esc cancels an open dialog (a bare EDIT
+; would just beep), Enter in the search box searches at once.   rcx = hwnd, rdx = message, r8 = wParam, r9 = lParam
+PROC edit_subproc, 6
+        mov     loc(0), rcx
+        mov     loc(1), rdx
+        mov     loc(2), r8
+        mov     loc(3), r9
+        cmp     edx, 0x0100                     ; WM_KEYDOWN
+        je      .k
+        cmp     edx, 0x0102                     ; WM_CHAR (suppress the beep for Enter / Esc)
+        je      .c
+.pass:  mov     rcx, [edit_orig_proc]
+        mov     rdx, loc(0)
+        mov     r8, loc(1)
+        mov     r9, loc(2)
+        mov     rax, loc(3)
+        mov     outarg(5), rax
+        call    CallWindowProcW
+        jmp     .out
+.k:     cmp     r8d, 13
+        je      .enter
+        cmp     r8d, 27
+        jne     .pass
+        cmp     dword [dlg_kind], 0
+        je      .pass
+        mov     edx, WM_DLG_CANCEL
+        jmp     .post
+.enter: mov     edx, WM_DLG_OK
+        cmp     dword [dlg_kind], 0
+        jne     .post
+        mov     rax, loc(0)
+        cmp     rax, [edit_search]
+        jne     .pass
+        mov     edx, WM_SEARCH_NOW
+.post:  mov     rcx, [hwnd]
+        xor     r8d, r8d
+        xor     r9d, r9d
+        call    PostMessageW
+        xor     eax, eax
+        jmp     .out
+.c:     cmp     r8d, 13
+        je     .swallow
+        cmp     r8d, 27
+        jne     .pass
+.swallow:
+        xor     eax, eax
+.out:   EPROC
+
+; Puts edit_subproc in front of every EDIT control (called once after they exist)
+PROC edits_subclass, 2
+        lea     rbx, [edit_ptrs]
+        xor     esi, esi
+.l:     mov     rax, [rbx+rsi*8]
+        mov     rcx, [rax]
+        test    rcx, rcx
+        jz      .n
+        mov     edx, -4                         ; GWLP_WNDPROC
+        lea     r8, [edit_subproc]
+        call    SetWindowLongPtrW
+        mov     [edit_orig_proc], rax
+.n:     inc     esi
+        cmp     esi, 5
+        jb      .l
+        EPROC
 
 ; ecx = kind, rdx = Card* of the playlist (edit / delete) or 0
 PROC dlg_open, 8

@@ -21,7 +21,7 @@ IMPORTS = {
         GetClientRect GetWindowRect LoadCursorW SetCursor GetDC ReleaseDC SetTimer KillTimer MoveWindow DestroyWindow
         SetWindowTextW GetWindowTextW SetFocus GetFocus GetKeyState AdjustWindowRectEx TrackMouseEvent SetProcessDPIAware
         GetDpiForWindow GetDpiForSystem GetSystemMetrics ScreenToClient ClientToScreen SetCapture ReleaseCapture MessageBoxW
-        PeekMessageW FindWindowW SetForegroundWindow OpenClipboard EmptyClipboard SetClipboardData CloseClipboard GetWindowLongPtrW SetWindowLongPtrW IsWindow SetWindowPos EnableWindow""",
+        PeekMessageW FindWindowW SetForegroundWindow OpenClipboard EmptyClipboard SetClipboardData CloseClipboard GetWindowLongPtrW SetWindowLongPtrW IsWindow SetWindowPos EnableWindow CallWindowProcW""",
     "gdi32": """CreateCompatibleDC CreateDIBSection SelectObject DeleteObject DeleteDC BitBlt GdiFlush SetBkColor SetTextColor
         CreateSolidBrush CreateFontW CreateFontIndirectW""",
     "gdiplus": """GdiplusStartup GdiplusShutdown GdipCreateFromHDC GdipDeleteGraphics GdipSetSmoothingMode
