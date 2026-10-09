@@ -23,19 +23,18 @@ jobs:
         shell: pwsh
         run: |
           $variants = @()
-          0..15 | ForEach-Object { $variants += ,@($_, 0, 0) }
-          foreach ($d in 4, 8, 12) { $variants += ,@(0, $d, 0) }
-          foreach ($b in 4, 8, 12) { $variants += ,@(0, 0, $b) }
+          foreach ($x in "-DNO_WLOG_REG -DNO_WLOG_CW", "-DNO_WLOG_REG", "-DNO_WLOG_CW", "") { $variants += ,@(0, 0, 0, $x) }
+          foreach ($t in 1, 2, 3, 5, 8) { $variants += ,@($t, 0, 0, "-DNO_WLOG_REG -DNO_WLOG_CW") }
           $bad = 0
           foreach ($v in $variants) {
-            $env:BS_NASM_DEFS = "-DPAD_TEXT=$($v[0]) -DPAD_DATA=$($v[1]) -DPAD_BSS=$($v[2])"
+            $env:BS_NASM_DEFS = "-DPAD_TEXT=$($v[0]) -DPAD_DATA=$($v[1]) -DPAD_BSS=$($v[2]) $($v[3])"
             python tools/build.py | Out-Null
             $dir = "$env:RUNNER_TEMP\lay-$($v -join '-')"
             Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
             $p = Start-Process -FilePath build\bytestream.exe -ArgumentList @("--demo", "--dump", "--act", "1,2", "--data-dir", $dir) -PassThru -NoNewWindow -RedirectStandardOutput "lay.out"
             if (-not $p.WaitForExit(20000)) { $p.Kill(); $code = "hung" } else { $code = $p.ExitCode }
             $ok = ($code -eq 0)
-            Write-Host ("text={0} data={1} bss={2}: {3}" -f $v[0], $v[1], $v[2], $(if ($ok) { "ok" } else { "FAILED (exit $code)" }))
+            Write-Host ("text={0} data={1} bss={2} {4}: {3}" -f $v[0], $v[1], $v[2], $(if ($ok) { "ok" } else { "FAILED (exit $code)" }), $v[3])
             if (-not $ok) {
               $bad++
               Get-Content "lay.out" -ErrorAction SilentlyContinue | Select-Object -First 12

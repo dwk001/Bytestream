@@ -1011,6 +1011,7 @@ PROC window_create, 8
         mov     [rdi+64], rax
         lea     rcx, [wc]
         call    RegisterClassExW
+%ifndef NO_WLOG_REG
         lea     rcx, [l_w_class]
         movzx   edx, ax
         call    log_num
@@ -1018,6 +1019,7 @@ PROC window_create, 8
         lea     rcx, [l_w_err1]
         mov     edx, eax
         call    log_num
+%endif
         ; outer size from the wanted client size
         mov     dword [rc_buf], 0
         mov     dword [rc_buf+4], 0
@@ -1054,6 +1056,7 @@ PROC window_create, 8
         mov     qword outarg(12), 0
         call    CreateWindowExW
         mov     [hwnd], rax
+%ifndef NO_WLOG_CW
         lea     rcx, [l_w_hwnd]
         mov     rdx, rax
         call    log_num
@@ -1067,6 +1070,7 @@ PROC window_create, 8
         lea     rcx, [l_w_size2]
         mov     rdx, loc(4)
         call    log_num
+%endif
         EPROC
 
 ; ---------------------------------------------------------------- setup inputs -> settings
