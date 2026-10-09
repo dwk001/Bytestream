@@ -338,6 +338,10 @@ PROC ui_activate, 6
         je      .openlog
         cmp     ecx, H_COPY_DIAG
         je      .copydiag
+        cmp     ecx, H_CANCEL_SIGNIN
+        je      .cancelsignin
+        cmp     ecx, H_COPY_AUTH
+        je      .copyauth
         xor     eax, eax
         jmp     .out
 .nav:   mov     eax, edx
@@ -461,6 +465,17 @@ PROC ui_activate, 6
         jmp     .done
 .openlog:
         call    app_open_log_folder
+        jmp     .done
+.cancelsignin:
+        call    auth_cancel
+        jmp     .done
+.copyauth:
+        mov     rcx, [auth_url_buf]
+        test    rcx, rcx
+        jz      .done
+        call    os_clipboard
+        lea     rcx, [w_link_copied]
+        call    ui_toast
         jmp     .done
 .copydiag:
         call    app_copy_diagnostics
@@ -850,4 +865,8 @@ PROC app_copy_diagnostics, 6
 
 section .data
 WSTR w_diag_copied, "Diagnostics copied to the clipboard"
+section .text
+
+section .data
+WSTR w_link_copied, "Sign-in link copied"
 section .text

@@ -47,6 +47,8 @@ extern CreateFontIndirectW, CreateSolidBrush, SetTextColor, SetBkColor
 %define H_BANNER_ACT  31
 %define H_OPEN_LOG    32
 %define H_COPY_DIAG   33
+%define H_CANCEL_SIGNIN 34
+%define H_COPY_AUTH   35
 
 %define BA_NONE       0
 %define BA_SETTINGS   1                 ; banner action: open Settings

@@ -20,6 +20,8 @@ text_begin:
 %include "img.asm"
 %include "player.asm"
 %include "ui_core.asm"
+%include "auth.asm"
+%include "localsrv.asm"
 %include "ui_widgets.asm"
 %include "ui_chrome.asm"
 %include "ui_overlays.asm"
@@ -60,6 +62,7 @@ cli_get:        resq 8                  ; --net-get paths (UTF-16)
 cli_type_client: resq 1
 cli_type_port:  resq 1
 cli_crash:      resd 1
+cli_wait_auth:  resd 1
 cli_banner:     resq 1
 cli_banner_btn: resq 1
 cli_http_meth:  resq 1
@@ -98,6 +101,7 @@ WSTR a_tclient, "--type-client"
 WSTR a_tport, "--type-port"
 WSTR a_banner, "--banner"
 WSTR a_crash, "--crash-test"
+WSTR a_waitauth, "--wait-auth"
 WSTR a_bbtn, "--banner-button"
 WSTR a_hmeth, "--http-method"
 WSTR a_hbody, "--http-body"
@@ -124,6 +128,10 @@ ZSTR d_playlists, "playlists="
 ZSTR d_title, "title="
 ZSTR d_detail, "detail="
 ZSTR d_port, "port="
+ZSTR d_auth, "auth_state="
+ZSTR d_signed, "signed_in="
+ZSTR d_demo, "demo="
+ZSTR d_user, "user="
 ZSTR d_net_n, "net_n="
 ZSTR d_net0, "net_0="
 ZSTR d_net1, "net_1="
@@ -269,6 +277,13 @@ PROC parse_cli, 4
         mov     dword [cli_dump], 1
         jmp     .next
 .a6:    mov     rcx, rbx
+        lea     rdx, [a_waitauth]
+        call    arg_is
+        test    eax, eax
+        jz      .a6a
+        mov     dword [cli_wait_auth], 1
+        jmp     .next
+.a6a:   mov     rcx, rbx
         lea     rdx, [a_crash]
         call    arg_is
         test    eax, eax
@@ -607,6 +622,38 @@ PROC run_scripted_input, 4
         call    buf_free
         EPROC
 
+; --wait-auth: pump messages until a running sign-in (browser step, token exchange, profile) has finished.
+PROC wait_auth, 4
+        call    GetTickCount64
+        mov     loc(0), rax
+.l:     lea     rcx, [msg_buf]
+        xor     edx, edx
+        xor     r8d, r8d
+        xor     r9d, r9d
+        mov     qword outarg(5), 1              ; PM_REMOVE
+        call    PeekMessageW
+        test    eax, eax
+        jz      .idle
+        lea     rcx, [msg_buf]
+        call    TranslateMessage
+        lea     rcx, [msg_buf]
+        call    DispatchMessageW
+        jmp     .l
+.idle:  cmp     dword [auth_state], AUTH_WAITING
+        je      .more
+        cmp     dword [auth_state], AUTH_EXCHANGE
+        je      .more
+        cmp     dword [net_pending], 0
+        je      .out
+.more:  call    GetTickCount64
+        sub     rax, loc(0)
+        cmp     rax, 30000
+        jae     .out
+        mov     ecx, 4
+        call    Sleep
+        jmp     .l
+.out:   EPROC
+
 ; Runs the --act list: each entry activates a hit target that really exists on screen.
 PROC run_acts, 4
         xor     ebx, ebx
@@ -679,6 +726,9 @@ PROC dump_state, 4
         DUMPNUM d_search_t, dword [lst_search_t+LS_COUNT]
         DUMPNUM d_playlists, dword [lst_playlists+LS_COUNT]
         DUMPNUM d_port, dword [set_port]
+        DUMPNUM d_auth, dword [auth_state]
+        DUMPNUM d_signed, dword [signed_in]
+        DUMPNUM d_demo, dword [g_demo]
         DUMPNUM d_net_n, dword [dbg_count]
         DUMPNUM d_net0, dword [dbg_results]
         DUMPNUM d_net1, dword [dbg_results+8]
@@ -690,6 +740,25 @@ PROC dump_state, 4
         setne   al
         mov     [dump_tmp], eax                 ; DUMPNUM clobbers eax before it reads its operand
         DUMPNUM d_banner, dword [dump_tmp]
+        mov     rcx, rdi
+        lea     rdx, [d_user]
+        call    dump_str
+        mov     rdi, rax
+        mov     rcx, [user_name]
+        test    rcx, rcx
+        jz      .nouser
+        mov     rdx, -1
+        call    w_to_u8
+        mov     loc(2), rax
+        mov     rcx, rdi
+        mov     rdx, rax
+        call    dump_str
+        mov     rdi, rax
+        mov     rcx, loc(2)
+        call    mem_free
+.nouser:
+        mov     byte [rdi], 10
+        inc     rdi
         mov     rcx, rdi
         lea     rdx, [d_client]
         call    dump_str
@@ -922,12 +991,14 @@ PROC start, 8
         mov     r8d, 5
         xor     r9d, r9d
         call    SendMessageW
+        call    auth_init
         cmp     dword [cli_demo], 0
         je      .login
         call    app_load_demo
         mov     dword [page], PAGE_HOME
         jmp     .ready
 .login: mov     dword [page], PAGE_LOGIN
+        call    auth_restore                    ; a stored session signs in without any click
 .ready: call    apply_cli
         mov     rcx, [hwnd]
         mov     edx, SW_SHOW
@@ -939,6 +1010,10 @@ PROC start, 8
         call    crash_test_fn
 .nocrash:
         call    run_scripted_input
+        cmp     dword [cli_wait_auth], 0
+        je      .nowait1
+        call    wait_auth                       ; let a stored session finish restoring before any scripted click
+.nowait1:
         mov     rcx, [cli_banner]
         test    rcx, rcx
         jz      .nobanner
@@ -949,6 +1024,10 @@ PROC start, 8
         call    run_acts
         mov     ecx, 15000
         call    net_wait_idle
+        cmp     dword [cli_wait_auth], 0
+        je      .noauthwait
+        call    wait_auth
+.noauthwait:
         cmp     dword [cli_hover], 0
         je      .hv
         mov     ecx, [cli_hx]

@@ -686,6 +686,7 @@ PROC selftest, 8
         lea     rdx, [tm_free]
         call    t_check
 
+        call    selftest_auth
         lea     rcx, [st_sum]
         call    out_z
         mov     rax, [g_fail]
@@ -696,3 +697,301 @@ s_105:  db "1:05", 0
 s_000:  db "0:00", 0
 s_6101: db "61:01", 0
 s_u64max: db "18446744073709551615", 0
+
+; ---------------------------------------------------------------- sign-in / server helpers
+section .data
+ZSTR sa_abc, "abc"
+ZSTR sa_abc_hex, "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"
+ZSTR sa_rfc_verifier, "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+ZSTR sa_rfc_challenge, "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+ZSTR sa_target, "/callback?code=a%2Fb+c%41&state=XYZ&empty=&last=1"
+ZSTR sa_n_code, "code"
+ZSTR sa_n_state, "state"
+ZSTR sa_n_empty, "empty"
+ZSTR sa_n_last, "last"
+ZSTR sa_n_none, "nope"
+ZSTR sa_v_code, "a/b cA"
+ZSTR sa_v_state, "XYZ"
+ZSTR sa_v_last, "1"
+ZSTR sa_path_cb, "/callback"
+ZSTR sa_path_q, "/callback?x=1"
+ZSTR sa_path_z, "/callbackz"
+ZSTR sa_path_sub, "/callback/x"
+ZSTR sa_hdrs, `Host: 127.0.0.1:8989\r\ncontent-LENGTH:   12\r\nX-Other: yes\r\n\r\n`
+ZSTR sa_h_host, "Host"
+ZSTR sa_h_len, "Content-Length"
+ZSTR sa_h_none, "Accept"
+ZSTR sa_v_host, "127.0.0.1:8989"
+ZSTR sa_v_len, "12"
+ZSTR sa_hay, "invalid_grant: Invalid redirect URI"
+ZSTR sa_needle, "redirect"
+ZSTR sa_needle2, "refresh"
+ZSTR sa_same1, "0123456789abcdefghijkl"
+ZSTR sa_same2, "0123456789abcdefghijkl"
+ZSTR sa_diff,  "0123456789abcdefghijkm"
+ZSTR ta_sha, "auth: SHA-256 of 'abc' matches the FIPS vector"
+ZSTR ta_pkce, "auth: PKCE S256 challenge matches the RFC 7636 example"
+ZSTR ta_len, "auth: generated verifier is 64 chars, challenge 43, state 22"
+ZSTR ta_alpha, "auth: verifier uses only URL-safe characters"
+ZSTR ta_rand, "auth: two generated verifiers differ"
+ZSTR ta_q1, "query: percent- and plus-decoding"
+ZSTR ta_q2, "query: second parameter"
+ZSTR ta_q3, "query: empty value has length 0"
+ZSTR ta_q4, "query: absent parameter is -1"
+ZSTR ta_q5, "query: last parameter without trailing &"
+ZSTR ta_q6, "query: key must match fully (cod != code)"
+ZSTR ta_p1, "path: exact match"
+ZSTR ta_p2, "path: query string allowed"
+ZSTR ta_p3, "path: longer name rejected"
+ZSTR ta_p4, "path: sub-path rejected"
+ZSTR ta_h1, "header: value found regardless of case, spaces trimmed"
+ZSTR ta_h2, "header: Content-Length parsed"
+ZSTR ta_h3, "header: absent header is -1"
+ZSTR ta_c1, "ct_equal: identical strings"
+ZSTR ta_c2, "ct_equal: one differing byte"
+ZSTR ta_s1, "contains: needle present"
+ZSTR ta_s2, "contains: needle absent"
+ZSTR sa_cod, "cod"
+
+section .bss
+sa_verif1:      resb 72
+sa_hex:         resb 80
+sa_out:         resb 80
+sa_chal:        resb 64
+
+section .text
+PROC selftest_auth, 6
+        ; SHA-256("abc")
+        lea     rcx, [sa_abc]
+        mov     edx, 3
+        lea     r8, [auth_hash]
+        call    sha256
+        lea     rsi, [auth_hash]
+        lea     rdi, [sa_hex]
+        xor     ebx, ebx
+.hx:    movzx   eax, byte [rsi+rbx]
+        shr     eax, 4
+        call    hexdigit
+        mov     [rdi+rbx*2], al
+        movzx   eax, byte [rsi+rbx]
+        and     eax, 15
+        call    hexdigit
+        mov     [rdi+rbx*2+1], al
+        inc     ebx
+        cmp     ebx, 32
+        jb      .hx
+        mov     byte [rdi+64], 0
+        lea     rcx, [sa_hex]
+        lea     rdx, [sa_abc_hex]
+        lea     r8, [ta_sha]
+        call    t_str
+
+        ; PKCE example from RFC 7636 appendix B
+        lea     rcx, [sa_rfc_verifier]
+        mov     edx, 43
+        lea     r8, [sa_chal]
+        call    pkce_challenge_of
+        lea     rcx, [sa_chal]
+        lea     rdx, [sa_rfc_challenge]
+        lea     r8, [ta_pkce]
+        call    t_str
+
+        ; generated values have the right shape and are random
+        call    pkce_make
+        lea     rcx, [auth_verifier]
+        call    u8_len
+        mov     loc(0), rax
+        lea     rcx, [auth_challenge]
+        call    u8_len
+        mov     loc(1), rax
+        lea     rcx, [auth_expect]
+        call    u8_len
+        xor     ecx, ecx
+        cmp     qword loc(0), 64
+        jne     .l1
+        cmp     qword loc(1), 43
+        jne     .l1
+        cmp     rax, 22
+        jne     .l1
+        mov     ecx, 1
+.l1:    lea     rdx, [ta_len]
+        call    t_check
+        xor     ebx, ebx                        ; every verifier character is in the URL-safe alphabet
+        mov     r12d, 1
+        lea     rsi, [auth_verifier]
+.al:    movzx   eax, byte [rsi+rbx]
+        lea     rcx, [a_alphabet]
+        mov     edx, 64
+.fa:    cmp     al, [rcx]
+        je      .found
+        inc     rcx
+        dec     edx
+        jnz     .fa
+        xor     r12d, r12d
+.found: inc     ebx
+        cmp     ebx, 64
+        jb      .al
+        mov     ecx, r12d
+        lea     rdx, [ta_alpha]
+        call    t_check
+        lea     rcx, [auth_verifier]
+        lea     rdx, [sa_verif1]
+        mov     r8d, 65
+        call    mem_copy
+        call    pkce_make
+        lea     rcx, [auth_verifier]
+        lea     rdx, [sa_verif1]
+        call    u8_eq
+        xor     ecx, ecx
+        test    eax, eax
+        sete    cl
+        lea     rdx, [ta_rand]
+        call    t_check
+
+        ; query-string parsing
+        lea     rcx, [sa_target]
+        lea     rdx, [sa_n_code]
+        lea     r8, [sa_out]
+        mov     r9d, 64
+        call    qget
+        lea     rcx, [sa_out]
+        lea     rdx, [sa_v_code]
+        lea     r8, [ta_q1]
+        call    t_str
+        lea     rcx, [sa_target]
+        lea     rdx, [sa_n_state]
+        lea     r8, [sa_out]
+        mov     r9d, 64
+        call    qget
+        lea     rcx, [sa_out]
+        lea     rdx, [sa_v_state]
+        lea     r8, [ta_q2]
+        call    t_str
+        lea     rcx, [sa_target]
+        lea     rdx, [sa_n_empty]
+        lea     r8, [sa_out]
+        mov     r9d, 64
+        call    qget
+        movsxd  rcx, eax
+        xor     edx, edx
+        lea     r8, [ta_q3]
+        call    t_int
+        lea     rcx, [sa_target]
+        lea     rdx, [sa_n_none]
+        lea     r8, [sa_out]
+        mov     r9d, 64
+        call    qget
+        movsxd  rcx, eax
+        mov     rdx, -1
+        lea     r8, [ta_q4]
+        call    t_int
+        lea     rcx, [sa_target]
+        lea     rdx, [sa_n_last]
+        lea     r8, [sa_out]
+        mov     r9d, 64
+        call    qget
+        lea     rcx, [sa_out]
+        lea     rdx, [sa_v_last]
+        lea     r8, [ta_q5]
+        call    t_str
+        lea     rcx, [sa_target]
+        lea     rdx, [sa_cod]
+        lea     r8, [sa_out]
+        mov     r9d, 64
+        call    qget
+        movsxd  rcx, eax
+        mov     rdx, -1
+        lea     r8, [ta_q6]
+        call    t_int
+
+        ; routing helpers
+        lea     rcx, [sa_path_cb]
+        lea     rdx, [sa_path_cb]
+        call    path_is
+        mov     ecx, eax
+        lea     rdx, [ta_p1]
+        call    t_check
+        lea     rcx, [sa_path_q]
+        lea     rdx, [sa_path_cb]
+        call    path_is
+        mov     ecx, eax
+        lea     rdx, [ta_p2]
+        call    t_check
+        lea     rcx, [sa_path_z]
+        lea     rdx, [sa_path_cb]
+        call    path_is
+        xor     ecx, ecx
+        test    eax, eax
+        sete    cl
+        lea     rdx, [ta_p3]
+        call    t_check
+        lea     rcx, [sa_path_sub]
+        lea     rdx, [sa_path_cb]
+        call    path_is
+        xor     ecx, ecx
+        test    eax, eax
+        sete    cl
+        lea     rdx, [ta_p4]
+        call    t_check
+
+        ; header lookup
+        lea     rcx, [sa_hdrs]
+        lea     rdx, [sa_h_host]
+        lea     r8, [sa_out]
+        mov     r9d, 64
+        call    req_header
+        lea     rcx, [sa_out]
+        lea     rdx, [sa_v_host]
+        lea     r8, [ta_h1]
+        call    t_str
+        lea     rcx, [sa_hdrs]
+        lea     rdx, [sa_h_len]
+        lea     r8, [sa_out]
+        mov     r9d, 64
+        call    req_header
+        lea     rcx, [sa_out]
+        lea     rdx, [sa_v_len]
+        lea     r8, [ta_h2]
+        call    t_str
+        lea     rcx, [sa_hdrs]
+        lea     rdx, [sa_h_none]
+        lea     r8, [sa_out]
+        mov     r9d, 64
+        call    req_header
+        movsxd  rcx, eax
+        mov     rdx, -1
+        lea     r8, [ta_h3]
+        call    t_int
+
+        ; constant-time compare, substring search
+        lea     rcx, [sa_same1]
+        lea     rdx, [sa_same2]
+        mov     r8d, 22
+        call    ct_equal
+        mov     ecx, eax
+        lea     rdx, [ta_c1]
+        call    t_check
+        lea     rcx, [sa_same1]
+        lea     rdx, [sa_diff]
+        mov     r8d, 22
+        call    ct_equal
+        xor     ecx, ecx
+        test    eax, eax
+        sete    cl
+        lea     rdx, [ta_c2]
+        call    t_check
+        lea     rcx, [sa_hay]
+        lea     rdx, [sa_needle]
+        call    u8_contains
+        mov     ecx, eax
+        lea     rdx, [ta_s1]
+        call    t_check
+        lea     rcx, [sa_hay]
+        lea     rdx, [sa_needle2]
+        call    u8_contains
+        xor     ecx, ecx
+        test    eax, eax
+        sete    cl
+        lea     rdx, [ta_s2]
+        call    t_check
+        EPROC

@@ -33,7 +33,9 @@ extern PeekMessageW, GetTickCount64
 
 %define TAG_NONE   0
 %define TAG_DEBUG  1
-%define TAG_COUNT  2                    ; grows as handlers are added
+%define TAG_TOKEN  2                    ; OAuth token endpoint answered (arg 0 = code exchange, 1 = session restore)
+%define TAG_ME     3                    ; GET /v1/me answered: sign-in complete
+%define TAG_COUNT  4                    ; grows as handlers are added
 
 section .bss
 nq_head:        resq 2
@@ -61,6 +63,8 @@ align 8
 net_handlers:
         dq 0
         dq h_debug
+        dq h_token
+        dq h_me
 
 section .text
 
@@ -130,9 +134,9 @@ net_set_token:
         lea     rcx, [tok_lock]
         call    lock_acquire
         lea     rdi, [tok_access]
+        xor     ecx, ecx                        ; index 0 (also the clear-token case, which skips the copy)
         test    rsi, rsi
         jz      .term
-        xor     ecx, ecx
 .c:     cmp     ecx, 638
         jae     .term
         mov     al, [rsi+rcx]
@@ -332,7 +336,10 @@ PROC net_job_headers, 4
 PROC net_run_job, 4
         mov     rbx, rcx
         mov     dword loc(0), 0                 ; attempts
-.again: mov     rcx, rbx
+.again: test    dword [rbx+JB_FLAGS], JF_NOAUTH
+        jnz     .hdrs
+        call    auth_ensure_fresh               ; renew a token that is about to expire (API worker only)
+.hdrs:  mov     rcx, rbx
         call    net_job_headers
         mov     loc(1), rax                     ; headers (wide) to free
         mov     rcx, [rbx+JB_METHOD]

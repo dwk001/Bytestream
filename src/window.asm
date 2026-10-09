@@ -574,11 +574,14 @@ PROC wndproc, 12
         cmp     eax, TIMER_SEARCH
         je      .search_timer
         call    player_tick
+        mov     ebx, eax
+        call    auth_tick
+        or      ebx, eax
         mov     rcx, [toast_text]
         test    rcx, rcx
         jz      .tk2
-        mov     eax, 1
-.tk2:   test    eax, eax
+        mov     ebx, 1
+.tk2:   test    ebx, ebx
         jz      .zero
         mov     rcx, loc(0)
         xor     edx, edx

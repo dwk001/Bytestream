@@ -6,7 +6,7 @@
 Every request is appended to the in-memory log, readable at  GET /__log  (JSON list), and cleared with
 POST /__reset.  Responses for the data endpoints come from tests/fixtures/*.json.
 """
-import json, os, sys, threading, time, urllib.parse
+import base64, hashlib, json, os, secrets, sys, threading, time, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 FIX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
@@ -25,9 +25,15 @@ class State:
 
     def reset(self):
         self.log.clear()
-        self.codes = {}           # code -> verifier challenge
-        self.tokens = {"access-1": time.time() + 3600}
-        self.refresh_ok = True
+        self.codes = {}           # authorization code -> {challenge, redirect_uri, client_id}
+        self.access = {}          # access token -> expiry (epoch seconds)
+        self.refresh = {}         # refresh token -> client_id (revoked tokens are removed)
+        self.counter = 0
+        self.valid_clients = None  # None = accept any client id, else a set
+        self.deny = False         # /authorize answers access_denied
+        self.expires_in = 3600
+        self.forbid_me = False    # /v1/me answers 403 (account not on the allow-list)
+        self.rotate_refresh = False
         self.fail_next = {}       # path-prefix -> (status, retry_after)
 
 
@@ -83,6 +89,12 @@ class Handler(BaseHTTPRequestHandler):
                     del STATE.fail_next[prefix]
                     return self._send(status, {"error": {"status": status}},
                                       extra={"Retry-After": str(retry)} if retry else None)
+        if u.path == "/authorize":
+            return self._authorize(q)
+        if u.path == "/api/token" and self.command == "POST":
+            return self._token(urllib.parse.parse_qs(body.decode()))
+        if u.path == "/v1/me":
+            return self._me()
         if u.path == "/echo":
             return self._send(200, {"method": entry["method"], "path": entry["path"],
                                     "headers": entry["headers"], "body": entry["body"]})
@@ -93,6 +105,69 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/big":                          # large body, exercises read looping
             return self._send(200, raw=(b"x" * 300000))
         self._send(404, {"error": {"status": 404, "message": "unknown fake endpoint " + u.path}})
+
+    # ---- the Accounts service
+    def _authorize(self, q):
+        g = lambda k: (q.get(k) or [""])[0]
+        with STATE.lock:
+            bad = (g("response_type") != "code" or g("code_challenge_method") != "S256" or not g("code_challenge")
+                   or not g("state") or not g("redirect_uri") or not g("client_id"))
+            if bad:
+                return self._send(400, {"error": "invalid_request"})
+            if STATE.valid_clients is not None and g("client_id") not in STATE.valid_clients:
+                return self._send(400, {"error": "invalid_client"})
+            if STATE.deny:
+                loc = g("redirect_uri") + "?" + urllib.parse.urlencode({"error": "access_denied", "state": g("state")})
+            else:
+                code = "code-" + secrets.token_hex(8)
+                STATE.codes[code] = {"challenge": g("code_challenge"), "redirect_uri": g("redirect_uri"),
+                                     "client_id": g("client_id"), "scope": g("scope")}
+                loc = g("redirect_uri") + "?" + urllib.parse.urlencode({"code": code, "state": g("state")})
+        self._send(302, raw=b"", extra={"Location": loc})
+
+    def _issue(self, client_id, with_refresh):
+        STATE.counter += 1
+        access = "access-%d" % STATE.counter
+        STATE.access[access] = time.time() + STATE.expires_in
+        out = {"access_token": access, "token_type": "Bearer", "expires_in": STATE.expires_in,
+               "scope": "streaming user-read-private"}
+        if with_refresh:
+            ref = "refresh-%d-%s" % (STATE.counter, secrets.token_hex(4))
+            STATE.refresh[ref] = client_id
+            out["refresh_token"] = ref
+        return out
+
+    def _token(self, form):
+        g = lambda k: (form.get(k) or [""])[0]
+        with STATE.lock:
+            if STATE.valid_clients is not None and g("client_id") not in STATE.valid_clients:
+                return self._send(401, {"error": "invalid_client"})
+            if g("grant_type") == "authorization_code":
+                info = STATE.codes.pop(g("code"), None)          # codes are single-use
+                if not info or info["redirect_uri"] != g("redirect_uri") or info["client_id"] != g("client_id"):
+                    return self._send(400, {"error": "invalid_grant", "error_description": "Invalid authorization code"})
+                digest = base64.urlsafe_b64encode(hashlib.sha256(g("code_verifier").encode()).digest()).rstrip(b"=").decode()
+                if digest != info["challenge"]:
+                    return self._send(400, {"error": "invalid_grant", "error_description": "code_verifier was incorrect"})
+                return self._send(200, self._issue(g("client_id"), True))
+            if g("grant_type") == "refresh_token":
+                if STATE.refresh.get(g("refresh_token")) != g("client_id"):
+                    return self._send(400, {"error": "invalid_grant", "error_description": "Refresh token revoked"})
+                out = self._issue(g("client_id"), STATE.rotate_refresh)
+                if STATE.rotate_refresh:
+                    STATE.refresh.pop(g("refresh_token"), None)
+                return self._send(200, out)
+            return self._send(400, {"error": "unsupported_grant_type"})
+
+    def _me(self):
+        auth = self.headers.get("Authorization", "")
+        with STATE.lock:
+            tok = auth[7:] if auth.startswith("Bearer ") else ""
+            if STATE.access.get(tok, 0) < time.time():
+                return self._send(401, {"error": {"status": 401, "message": "The access token expired"}})
+            if STATE.forbid_me:
+                return self._send(403, {"error": {"status": 403, "message": "User not registered in the Developer Dashboard"}})
+        self._send(200, fixture("me.json"))
 
     do_GET = do_POST = do_PUT = do_DELETE = _handle
 

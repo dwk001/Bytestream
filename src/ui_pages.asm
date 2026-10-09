@@ -78,6 +78,10 @@ WSTR w_clientid_s, "Client ID"
 WSTR w_redirect_s, "Redirect URI (add this to your Spotify app)"
 WSTR w_login_note1, "Playback needs Spotify Premium. Apps in development mode allow up to 5 listed users."
 WSTR w_login_note2, "Everything here can be changed later in Settings."
+WSTR w_waiting, "Waiting for your browser..."
+WSTR w_signing_in, "Signing in..."
+WSTR w_copy_link, "Copy sign-in link"
+WSTR w_cancel, "Cancel"
 WSTR w_diag, "Diagnostics"
 WSTR w_open_log, "Open log folder"
 WSTR w_copy_diag, "Copy diagnostics"
@@ -1032,7 +1036,58 @@ PROC page_login, 12
         add     r12d, edi
         S       24
         add     r12d, eax
-        lea     rcx, [w_signin]
+        cmp     dword [auth_state], AUTH_OUT
+        je      .idle
+        ; ---- a sign-in is running: status line, and (while waiting for the browser) Copy link / Cancel
+        SETFONT F_BODY_B
+        SETCOL  T_FG
+        lea     rcx, [w_waiting]
+        cmp     dword [auth_state], AUTH_WAITING
+        je      .stat
+        lea     rcx, [w_signing_in]
+.stat:  mov     edx, r13d
+        mov     r8d, r12d
+        mov     r9d, ebx
+        S       30
+        mov     outarg(5), rax
+        call    gfx_text
+        S       40
+        add     r12d, eax
+        cmp     dword [auth_state], AUTH_WAITING
+        jne     .busy_end
+        S       10
+        mov     edi, eax                        ; gap between the two buttons
+        mov     esi, ebx
+        sub     esi, edi
+        shr     esi, 1                          ; half width
+        lea     rcx, [w_copy_link]
+        mov     edx, r13d
+        mov     r8d, r12d
+        mov     r9d, esi
+        S       44
+        mov     outarg(5), rax
+        mov     qword outarg(6), H_COPY_AUTH
+        mov     qword outarg(7), 0
+        mov     qword outarg(8), 1
+        call    draw_button
+        lea     rcx, [w_cancel]
+        lea     edx, [r13+rsi]
+        add     edx, edi
+        mov     r8d, r12d
+        mov     r9d, esi
+        S       44
+        mov     outarg(5), rax
+        mov     qword outarg(6), H_CANCEL_SIGNIN
+        mov     qword outarg(7), 0
+        mov     qword outarg(8), 1
+        call    draw_button
+        S       56
+        add     r12d, eax
+.busy_end:
+        S       20
+        add     r12d, eax
+        jmp     .notes
+.idle:  lea     rcx, [w_signin]
         mov     edx, r13d
         mov     r8d, r12d
         mov     r9d, ebx
@@ -1056,7 +1111,7 @@ PROC page_login, 12
         call    draw_button
         S       62
         add     r12d, eax
-        SETFONT F_CAPTION
+.notes: SETFONT F_CAPTION
         SETCOL  T_MUTED_FG
         S       18
         mov     esi, eax

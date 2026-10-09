@@ -50,6 +50,15 @@ default rel
 %define stk7    [rbp+64]
 %define stk8    [rbp+72]
 
+; A growable Buf (core.asm: ptr, len, cap) living in three consecutive locals.  BUFZERO top initialises the slot
+; occupying loc(top-2)..loc(top); pass `lea rcx, loc(top)` as the Buf*.  Its fields are loc(top) = ptr,
+; loc(top-1) = length, loc(top-2) = capacity.  Slots must not overlap: use tops 2, 5, 8, 11 ... for locals 0..n.
+%macro BUFZERO 1
+        mov     qword loc(%1), 0
+        mov     qword loc(%1-1), 0
+        mov     qword loc(%1-2), 0
+%endmacro
+
 ; stack-argument slot for outgoing call (5th arg = 5, 6th = 6, ...)
 %define outarg(i) [rsp+32+8*((i)-5)]
 
