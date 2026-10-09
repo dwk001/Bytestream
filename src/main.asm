@@ -1,5 +1,10 @@
 ; main.asm - ByteStream for Windows, x86-64 assembly.  Single translation unit: this file includes the rest.
 %include "win64.inc"
+
+; All code lives in one .text; text_begin / text_end bound it for the unwind table at the end of this file.
+section .text
+text_begin:
+
 %include "core.asm"
 %include "json.asm"
 %include "model.asm"
@@ -984,3 +989,25 @@ PROC start, 8
         xor     ecx, ecx
         call    ExitProcess
         EPROC
+
+; ---------------------------------------------------------------- exception unwind tables
+; 64-bit Windows can only unwind (and therefore reach the crash filter, SEH and the debugger) through code that
+; has unwind data.  Every PROC starts with `push rbp / mov rbp, rsp`, so one entry describing exactly that frame
+; covers the whole image: restore rsp from rbp, pop the saved rbp, return address is next.  Frameless leaf
+; helpers are unwound as if they were part of their caller, which still reaches the caller's caller.
+section .text
+text_end:
+
+section .xdata rdata align=4
+unwind_frame:
+        db 1                            ; version 1, no flags
+        db 4                            ; size of prolog: push rbp (1) + mov rbp, rsp (3)
+        db 2                            ; two unwind codes
+        db 5                            ; frame register = rbp, offset 0
+        db 4, 0x03                      ; at +4: UWOP_SET_FPREG
+        db 1, 0x50                      ; at +1: UWOP_PUSH_NONVOL rbp
+
+section .pdata rdata align=4
+        dd text_begin wrt ..imagebase
+        dd text_end wrt ..imagebase
+        dd unwind_frame wrt ..imagebase

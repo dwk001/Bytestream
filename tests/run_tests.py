@@ -312,8 +312,8 @@ def main():
     rc, out, _, _ = run(["--demo", "--no-browser", "--crash-test"], data_dir=d, timeout=60)
     text = open(os.path.join(d, "bytestream.log"), encoding="utf-8").read()
     check(rc != 0, "crash: the process exits non-zero after a fault", "rc=%s" % rc)
-    check("CRASH code=0xc0000005" in text, "crash: report names the exception")
-    names = resolve_rvas(text[text.index("CRASH"):])
+    check("CRASH code=0xc0000005" in text, "crash: report names the exception", "rc=%s stdout=%r log tail=%r" % (rc, out[:200], text[-500:]))
+    names = resolve_rvas(text[text.index("CRASH"):]) if "CRASH" in text else []
     check(names and names[0].startswith("crash_test_fn+"), "crash: the faulting address resolves to crash_test_fn via the linker map", str(names))
     check(any(n.startswith("start") for n in names[1:]), "crash: the stack walk reaches the caller (start)", str(names))
     check("rax=0x" in text and "r15=0x" in text, "crash: all sixteen registers are recorded")
