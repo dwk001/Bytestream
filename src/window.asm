@@ -172,6 +172,7 @@ PROC render_frame, 2
         call    like_flush
         jmp     .out
 .full:  inc     dword [paints_full]
+        call    anim_step
         mov     eax, [bb_w]
         mov     [ui_w], eax
         mov     eax, [bb_h]
@@ -214,6 +215,7 @@ PROC render_frame, 2
         call    paint_menu
         call    paint_dialog
         call    paint_toast
+        call    anim_frame_end
         mov     dword [frame_valid], 1
         call    like_flush                      ; hearts painted this frame that need an answer go out as one request
 .out:   EPROC
@@ -568,6 +570,13 @@ PROC wndproc, 12
         inc     dword [first_paint]
         cmp     dword [first_paint], 2          ; let a second frame settle (async covers, edits)
         jb      .repaint
+        cmp     dword [cli_shot_ms], 0
+        je      .snap
+        call    GetTickCount64
+        sub     rax, [run_t0]
+        cmp     eax, [cli_shot_ms]
+        jb      .repaint
+.snap:
         mov     dword [shot_done], 1
         call    write_screenshot
         xor     ecx, ecx
@@ -733,6 +742,8 @@ PROC wndproc, 12
 .timer: mov     rax, loc(2)
         cmp     eax, TIMER_SEARCH
         je      .search_timer
+        cmp     eax, TIMER_ANIM
+        je      .tkall                          ; an animation frame: repaint everything
         cmp     dword [cli_run_ms], 0           ; tests: --run-ms N lets the app run N ms, then dumps its state and exits
         je      .norun
         call    GetTickCount64

@@ -460,6 +460,10 @@ PROC net_wait_idle, 8
         call    TranslateMessage
         lea     rcx, [msg_buf]
         call    DispatchMessageW
+        call    GetTickCount64                  ; endless animation frames must not keep this loop alive past the timeout
+        sub     rax, loc(1)
+        cmp     rax, loc(0)
+        jae     .out
         jmp     .l
 .nomsg: cmp     dword [net_pending], 0
         je      .out

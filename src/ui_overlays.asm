@@ -89,11 +89,11 @@ PROC draw_mini_track, 8
 
 ; ---------------------------------------------------------------- queue
 PROC paint_queue, 16
-        cmp     dword [queue_open], 0
+        cmp     dword [lay_q_w], 0
         je      .out
         mov     eax, [lay_q_x]
         mov     loc(0), rax
-        mov     eax, [lay_q_w]
+        mov     eax, [lay_q_full]
         mov     loc(1), rax
         mov     eax, [lay_bar_y]
         mov     loc(2), rax
@@ -202,11 +202,12 @@ PROC paint_queue, 16
         add     eax, dword loc(8)
         cmp     r12d, eax
         jge     .end
-        cmp     dword [hover_id], H_QUEUE_ROW
-        jne     .draw
-        cmp     dword [hover_arg], ebx
-        jne     .draw
-        SETCOL  T_SIDEBAR_ACC
+        mov     ecx, H_QUEUE_ROW
+        mov     edx, ebx
+        call    anim_hv
+        test    eax, eax
+        jz      .draw
+        SETCOL_F T_SIDEBAR_ACC, eax
         mov     ecx, r13d
         mov     edx, r12d
         mov     r8d, r14d
@@ -238,9 +239,25 @@ PROC paint_queue, 16
 %define fs_iw    loc(5)
 %define fs_pad   loc(6)
 
-PROC paint_fullscreen, 12
-        cmp     dword [fullscreen], 0
-        je      .out
+; The full-screen view slides up from the bottom edge (and back down) while AC_FULL moves.
+PROC paint_fullscreen, 2
+        mov     ecx, AC_FULL
+        call    anim_get
+        test    eax, eax
+        jz      .out
+        mov     edx, 256
+        sub     edx, eax
+        imul    edx, [ui_h]
+        shr     edx, 8
+        xor     ecx, ecx
+        call    gfx_translate
+        call    paint_fullscreen_body
+        xor     ecx, ecx
+        xor     edx, edx
+        call    gfx_translate
+.out:   EPROC
+
+PROC paint_fullscreen_body, 12
         ; ambient background tinted from the cover (cached per track)
         mov     eax, [np_gen]
         cmp     eax, [fs_gen]
@@ -522,6 +539,15 @@ PROC paint_toast, 6
         call    GetTickCount64
         cmp     rax, [toast_until]
         jae     .gone
+        mov     ecx, AC_TOAST                   ; fades in and rises a few pixels
+        call    anim_get
+        mov     [gfx_alpha], eax
+        mov     edx, 256
+        sub     edx, eax
+        imul    edx, 10
+        shr     edx, 8
+        xor     ecx, ecx
+        call    gfx_translate
         SETFONT F_BODY_B
         mov     rcx, [toast_text]
         call    gfx_text_w
@@ -552,6 +578,10 @@ PROC paint_toast, 6
         mov     rcx, [toast_text]
         TXT     rcx, r14d, r15d, r12d, r13d
         SETALIGN 0
+        mov     dword [gfx_alpha], 256
+        xor     ecx, ecx
+        xor     edx, edx
+        call    gfx_translate
         jmp     .out
 .gone:  mov     rcx, [toast_text]
         call    mem_free

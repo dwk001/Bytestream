@@ -48,12 +48,13 @@ PROC draw_nav_item, 8
         jz      .nosel
         SETCOL  T_SIDEBAR_ACC
         jmp     .bg
-.nosel: cmp     dword [hover_id], H_NAV
-        jne     .nobg
-        mov     eax, [hover_arg]
-        cmp     eax, dword loc(2)
-        jne     .nobg
-        SETCOL_A T_SIDEBAR_ACC, 0x40
+.nosel: mov     ecx, H_NAV
+        mov     edx, dword loc(2)
+        call    anim_hv
+        imul    eax, 0x40
+        shr     eax, 8
+        jz      .nobg
+        SETCOL_AR T_SIDEBAR_ACC, eax
 .bg:    S       8
         mov     outarg(5), rax
         mov     ecx, dword loc(4)
@@ -253,11 +254,13 @@ PROC paint_sidebar, 12
         jz      .nhv
         SETCOL  T_SIDEBAR_ACC
         jmp     .fillrow
-.nhv:   cmp     dword [hover_id], H_SIDE_PL
-        jne     .cover
-        cmp     dword [hover_arg], r12d
-        jne     .cover
-        SETCOL_A T_SIDEBAR_ACC, 0x40
+.nhv:   mov     ecx, H_SIDE_PL
+        mov     edx, r12d
+        call    anim_hv
+        imul    eax, 0x40
+        shr     eax, 8
+        jz      .cover
+        SETCOL_AR T_SIDEBAR_ACC, eax
 .fillrow:
         mov     eax, dword loc(0)
         mov     ecx, dword loc(3)

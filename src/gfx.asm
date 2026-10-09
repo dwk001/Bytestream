@@ -14,7 +14,7 @@ extern GdipCreateBitmapFromStream, GdipCreateBitmapFromScan0, GdipDisposeImage, 
 extern GdipGetImageWidth, GdipGetImageHeight, GdipGetImageGraphicsContext, GdipBitmapGetPixel
 extern GdipSetClipRectI, GdipResetClip, GdipGraphicsClear, GdipSetPenStartCap, GdipSetPenEndCap
 extern GdipSetPixelOffsetMode, GdipSetCompositingQuality, GdipMeasureString, GdipSetClipPath
-extern GdipFillPie, GdipDrawArcI, GdipCreateLineBrushI
+extern GdipFillPie, GdipDrawArcI, GdipCreateLineBrushI, GdipResetWorldTransform, GdipTranslateWorldTransform
 
 %define F_BODY      0
 %define F_BODY_B    1
@@ -36,6 +36,7 @@ g_fmt:          resq 3                  ; left, centre, right
 g_cur_font:     resd 1
 g_cur_align:    resd 1
 g_cur_color:    resd 1
+gfx_alpha:      resd 1                  ; 0 .. 256: fades everything drawn with gfx_color (menus, dialogs, toasts)
 g_gdip_in:      resd 6
 
 section .data
@@ -47,6 +48,7 @@ section .text
 
 ; ---------------------------------------------------------------- setup
 PROC gfx_init, 2
+        mov     dword [gfx_alpha], 256
         mov     dword [g_gdip_in], 1            ; GdiplusVersion
         lea     rcx, [g_gdip_tok]
         lea     rdx, [g_gdip_in]
@@ -136,12 +138,34 @@ PROC gfx_attach, 0
         EPROC
 
 ; ---------------------------------------------------------------- state
-PROC gfx_color, 0                       ; ecx = 0xAARRGGBB
-        mov     [g_cur_color], ecx
+PROC gfx_color, 0                       ; ecx = 0xAARRGGBB, its alpha scaled by gfx_alpha (256 = unchanged)
+        mov     edx, [gfx_alpha]
+        cmp     edx, 256
+        jae     .set
+        call    col_alpha_scale
+        mov     ecx, eax
+.set:   mov     [g_cur_color], ecx
         mov     edx, ecx
         mov     rcx, [g_brush]
         call    GdipSetSolidFillColor
         EPROC
+
+; ecx = dx, edx = dy: everything drawn from now on is shifted (0, 0 puts it back); hit rectangles follow via ui_dy
+PROC gfx_translate, 2
+        mov     loc(0), rcx
+        mov     loc(1), rdx
+        mov     [ui_dy], edx
+        mov     rcx, [g_g]
+        call    GdipResetWorldTransform
+        mov     eax, dword loc(0)
+        or      eax, dword loc(1)
+        jz      .out
+        mov     rcx, [g_g]
+        cvtsi2ss xmm1, dword loc(0)
+        cvtsi2ss xmm2, dword loc(1)
+        xor     r9d, r9d                        ; MatrixOrderPrepend
+        call    GdipTranslateWorldTransform
+.out:   EPROC
 
 gfx_font:                               ; ecx = font index
         mov     [g_cur_font], ecx

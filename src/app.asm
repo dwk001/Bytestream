@@ -806,6 +806,7 @@ PROC ui_mouse_up, 2
 
 ; ecx = wheel delta (signed, 120 per notch), edx = mouse x
 PROC ui_wheel, 2
+        mov     r12d, edx                       ; the mouse x: cqo below destroys rdx
         cmp     dword [menu_open], 0
         je      .nomenu
         cmp     dword [dlg_kind], 0
@@ -827,17 +828,23 @@ PROC ui_wheel, 2
         mov     rcx, 120
         idiv    rcx
         mov     ecx, eax                        ; signed pixel step
-        cmp     edx, [lay_sb_w]
+        cmp     r12d, [lay_sb_w]
         jl      .side
-        cmp     edx, [lay_q_x]
+        cmp     r12d, [lay_q_x]
         jge     .q
-        add     [scroll_main], ecx
+        mov     edx, ecx
+        xor     ecx, ecx
+        call    anim_scroll_add
         jmp     .ok
-.side:  add     [scroll_side], ecx
+.side:  mov     edx, ecx
+        mov     ecx, 1
+        call    anim_scroll_add
         jmp     .ok
 .q:     cmp     dword [queue_open], 0
         je      .none
-        add     [scroll_queue], ecx
+        mov     edx, ecx
+        mov     ecx, 2
+        call    anim_scroll_add
 .ok:    mov     eax, 1
         jmp     .out
 .none:  xor     eax, eax

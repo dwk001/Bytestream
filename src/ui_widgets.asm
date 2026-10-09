@@ -1,16 +1,14 @@
 ; ui_widgets.asm - reusable painters: covers, track tables, card grids, pills, buttons.
 ; Every painter also appends its clickable rectangles to the hit list.
 
-%define H_CARD_PLAY   26
-%define H_PILL        27
-
 section .bss
 lay_main_x:     resd 1                  ; main content area (between sidebar and queue)
 lay_main_w:     resd 1
 lay_main_h:     resd 1                  ; = player bar top
 lay_pad:        resd 1
 lay_q_x:        resd 1
-lay_q_w:        resd 1
+lay_q_w:        resd 1                  ; visible width of the queue panel (it slides in and out)
+lay_q_full:     resd 1                  ; its full width
 lay_sb_w:       resd 1
 lay_bar_y:      resd 1
 lay_bar_h:      resd 1
@@ -123,11 +121,15 @@ PROC lay_compute, 0
         mov     eax, [ui_w]
         mov     [lay_q_x], eax
         mov     dword [lay_q_w], 0
-        cmp     dword [queue_open], 0
-        je      .out
+        MET     eax, M_QW
+        mov     [lay_q_full], eax
         cmp     dword [page], PAGE_LOGIN
         je      .out
-        MET     eax, M_QW
+        mov     ecx, AC_QUEUE                   ; the panel slides in from the right edge
+        call    anim_get
+        imul    eax, [lay_q_full]
+        shr     eax, 8
+        jz      .out
         mov     [lay_q_w], eax
         mov     ecx, [ui_w]
         sub     ecx, eax
@@ -188,15 +190,10 @@ PROC draw_pill, 8
         je      .off
         SETCOL  T_PRIMARY
         jmp     .fill
-.off:   mov     eax, [hover_id]
-        cmp     eax, dword loc(4)
-        jne     .plain
-        mov     eax, [hover_arg]
-        cmp     eax, dword loc(5)
-        jne     .plain
-        SETCOL  T_ACTIVE
-        jmp     .fill
-.plain: SETCOL  T_SURFACE
+.off:   mov     ecx, dword loc(4)
+        mov     edx, dword loc(5)
+        call    anim_hv                         ; surface fades into the pressed colour under the mouse
+        SETCOL_MIX T_SURFACE, T_ACTIVE, eax
 .fill:  mov     eax, esi
         shr     eax, 1
         mov     outarg(5), rax
@@ -246,25 +243,33 @@ PROC draw_button, 6
         je      .sf
         cmp     eax, 2
         je      .dg
-        SETCOL  T_PRIMARY
+        mov     esi, T_PRIMARY
         mov     ebx, T_PRIMARY_FG
         jmp     .go
-.sf:    SETCOL  T_SURFACE
+.sf:    mov     esi, T_SURFACE
         mov     ebx, T_FG
         jmp     .go
-.dg:    SETCOL  T_DANGER
+.dg:    mov     esi, T_DANGER
         mov     ebx, T_FG
-.go:    mov     eax, [hover_id]
-        cmp     eax, dword [rbp+56]
-        jne     .draw
-        mov     eax, [hover_arg]
-        cmp     eax, dword [rbp+64]
-        jne     .draw
+.go:    mov     ecx, [rbp+56]
+        mov     edx, [rbp+64]
+        call    anim_hv                         ; hover fade 0 .. 256
+        mov     r12d, eax
         cmp     dword [rbp+72], 0
         jne     .hv
-        SETCOL_A T_PRIMARY, 0xD8
+        imul    eax, 39                         ; primary: opaque -> alpha 0xD8 under the mouse
+        shr     eax, 8
+        mov     edx, 256
+        sub     edx, eax
+        SETCOL_F T_PRIMARY, edx
         jmp     .draw
-.hv:    SETCOL  T_ACTIVE
+.hv:    lea     rax, [th]
+        mov     ecx, [rax+rsi*4]
+        mov     edx, [th+4*T_ACTIVE]
+        mov     r8d, r12d
+        call    col_lerp
+        mov     ecx, eax
+        call    gfx_color
 .draw:  mov     rax, loc(4)
         shr     eax, 1
         mov     outarg(5), rax
@@ -319,13 +324,12 @@ PROC draw_icon_button, 6
         call    gfx_ellipse
         jmp     .icon
 .nofill:
-        mov     eax, [hover_id]
-        cmp     eax, dword [rbp+48]
-        jne     .icon
-        mov     eax, [hover_arg]
-        cmp     eax, dword [rbp+56]
-        jne     .icon
-        SETCOL  T_HOVER
+        mov     ecx, [rbp+48]
+        mov     edx, [rbp+56]
+        call    anim_hv
+        test    eax, eax
+        jz      .icon
+        SETCOL_F T_HOVER, eax
         mov     ecx, dword loc(1)
         mov     edx, dword loc(2)
         mov     r8d, dword loc(3)
@@ -518,13 +522,12 @@ PROC draw_tracks, 16
         mov     r8d, eax
         RECT    dword dt_x, r13d, r8d, dword dt_rowh
         jmp     .cols
-.nplay: cmp     dword [hover_id], H_TRACK
-        je      .hvr
-        cmp     dword [hover_id], H_LIKE        ; the heart belongs to the row
-        jne     .cols
-.hvr:   cmp     dword [hover_arg], r15d
-        jne     .cols
-        SETCOL  T_HOVER
+.nplay: mov     ecx, H_TRACK                    ; the heart belongs to the row (anim_step folds H_LIKE into H_TRACK)
+        mov     edx, r15d
+        call    anim_hv
+        test    eax, eax
+        jz      .cols
+        SETCOL_F T_HOVER, eax
         RRECT   dword dt_x, r13d, dword dt_w, dword dt_rowh, 8
 .cols:  SETFONT F_SMALL
         SETALIGN 1
@@ -744,15 +747,11 @@ PROC draw_cards, 12
         shl     eax, 16
         or      eax, ebx
         mov     edi, eax                        ; hit arg
-        xor     r15d, r15d                      ; r15d = hovered
-        mov     eax, [hover_id]
-        cmp     eax, H_CARD
-        je      .hv1
-        cmp     eax, H_CARD_PLAY
-        jne     .hv2
-.hv1:   cmp     dword [hover_arg], edi
-        sete    r15b
-.hv2:   mov     eax, [rsi+CD_KIND]
+        mov     ecx, H_CARD                     ; r15d = hover fade 0 .. 256 (the play button belongs to the card)
+        mov     edx, edi
+        call    anim_hv
+        mov     r15d, eax
+        mov     eax, [rsi+CD_KIND]
         mov     rcx, [rsi+CD_IMG_M]
         mov     edx, dword cd_cx
         mov     r8d, dword cd_cy
@@ -812,6 +811,7 @@ PROC draw_cards, 12
         sub     edx, eax
         mov     dword cd_cx, ecx
         mov     dword cd_cy, edx
+        mov     [gfx_alpha], r15d               ; the play button fades in
         SETCOL  T_PRIMARY
         mov     ecx, dword cd_cx
         mov     edx, dword cd_cy
@@ -829,6 +829,7 @@ PROC draw_cards, 12
         shr     r8d, 1
         lea     r9, [ic_play]
         call    icon_draw
+        mov     dword [gfx_alpha], 256
         mov     eax, H_CARD_PLAY
         mov     [rsp+32], rax
         mov     [rsp+40], rdi

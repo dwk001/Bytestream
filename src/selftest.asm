@@ -689,6 +689,7 @@ PROC selftest, 8
 
         call    selftest_auth
         call    selftest_img
+        call    selftest_anim
         lea     rcx, [st_sum]
         call    out_z
         mov     rax, [g_fail]
@@ -1070,4 +1071,111 @@ PROC selftest_img, 4
         lea     r8, [ti_bytes]
         call    t_int
         mov     qword [img_budget], IMG_BUDGET
+        EPROC
+
+; ---------------------------------------------------------------- anim.asm helpers
+section .data
+ta_e0:  db "anim: ease(0) = 0", 0
+ta_e1:  db "anim: ease(1) = 256", 0
+ta_e2:  db "anim: ease(0.5) is ahead of linear (224)", 0
+ta_a1:  db "anim: alpha scaled to half", 0
+ta_a2:  db "anim: alpha scale 256 keeps the colour", 0
+ta_l0:  db "anim: lerp 0 gives colour 0", 0
+ta_l1:  db "anim: lerp 256 gives colour 1", 0
+ta_l2:  db "anim: lerp 128 of black and white is mid grey", 0
+ta_l3:  db "anim: lerp keeps channels apart", 0
+ta_ap1: db "anim: approach never overshoots upwards", 0
+ta_ap2: db "anim: approach never overshoots downwards", 0
+ta_ap3: db "anim: approach moves by the step", 0
+
+section .text
+PROC selftest_anim, 0
+        xor     ecx, ecx
+        call    anim_ease
+        mov     ecx, eax
+        xor     edx, edx
+        lea     r8, [ta_e0]
+        call    t_int
+        mov     ecx, 65536
+        call    anim_ease
+        mov     ecx, eax
+        mov     edx, 256
+        lea     r8, [ta_e1]
+        call    t_int
+        mov     ecx, 32768
+        call    anim_ease
+        mov     ecx, eax
+        mov     edx, 224
+        lea     r8, [ta_e2]
+        call    t_int
+        mov     ecx, 0xFF336699
+        mov     edx, 128
+        call    col_alpha_scale
+        mov     ecx, eax
+        mov     edx, 0x7F336699
+        lea     r8, [ta_a1]
+        call    t_int
+        mov     ecx, 0x80336699
+        mov     edx, 256
+        call    col_alpha_scale
+        mov     ecx, eax
+        mov     edx, 0x80336699
+        lea     r8, [ta_a2]
+        call    t_int
+        mov     ecx, 0xFF102030
+        mov     edx, 0x00FFEEDD
+        xor     r8d, r8d
+        call    col_lerp
+        mov     ecx, eax
+        mov     edx, 0xFF102030
+        lea     r8, [ta_l0]
+        call    t_int
+        mov     ecx, 0xFF102030
+        mov     edx, 0x00FFEEDD
+        mov     r8d, 256
+        call    col_lerp
+        mov     ecx, eax
+        mov     edx, 0x00FFEEDD
+        lea     r8, [ta_l1]
+        call    t_int
+        mov     ecx, 0xFF000000
+        mov     edx, 0xFFFFFFFF
+        mov     r8d, 128
+        call    col_lerp
+        mov     ecx, eax
+        mov     edx, 0xFF7F7F7F
+        lea     r8, [ta_l2]
+        call    t_int
+        mov     ecx, 0xFFFF0000                 ; red -> blue halfway: no bleeding between channels
+        mov     edx, 0xFF0000FF
+        mov     r8d, 128
+        call    col_lerp
+        mov     ecx, eax
+        mov     edx, 0xFF7F007F
+        lea     r8, [ta_l3]
+        call    t_int
+        mov     eax, 100                        ; v = 100 -> target 150 by steps of 80: stops at 150
+        mov     edx, 150
+        mov     ecx, 80
+        call    anim_approach
+        mov     ecx, eax
+        mov     edx, 150
+        lea     r8, [ta_ap1]
+        call    t_int
+        mov     eax, 100
+        mov     edx, 30
+        mov     ecx, 80
+        call    anim_approach
+        mov     ecx, eax
+        mov     edx, 30
+        lea     r8, [ta_ap2]
+        call    t_int
+        mov     eax, 100
+        mov     edx, 1000
+        mov     ecx, 80
+        call    anim_approach
+        mov     ecx, eax
+        mov     edx, 180
+        lea     r8, [ta_ap3]
+        call    t_int
         EPROC

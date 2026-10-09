@@ -545,9 +545,18 @@ PROC ui_context, 8
 .out:   EPROC
 
 ; The menu surface and its rows (an overlay above the page).   Locals: 0 x, 1 y, 2 w, 3 row height, 4 pad, 5 h, 6 rows shown
-PROC paint_menu, 8
+; The menu fades in (anim channel AC_MENU); the body below draws it.
+PROC paint_menu, 2
         cmp     dword [menu_open], 0
         je      .out
+        mov     ecx, AC_MENU
+        call    anim_get
+        mov     [gfx_alpha], eax
+        call    paint_menu_body
+        mov     dword [gfx_alpha], 256
+.out:   EPROC
+
+PROC paint_menu_body, 8
         HIT     0, 0, dword [ui_w], dword [ui_h], H_MENU_BG, 0
         S       250
         mov     loc(2), rax
@@ -600,11 +609,12 @@ PROC paint_menu, 8
         add     eax, dword loc(1)
         add     eax, dword loc(4)
         mov     r12d, eax                       ; row y
-        cmp     dword [hover_id], H_MENU_ITEM
-        jne     .text
-        cmp     dword [hover_arg], ebx
-        jne     .text
-        SETCOL  T_HOVER
+        mov     ecx, H_MENU_ITEM
+        mov     edx, ebx
+        call    anim_hv
+        test    eax, eax
+        jz      .text
+        SETCOL_F T_HOVER, eax
         S       6
         mov     r8d, dword loc(2)
         sub     r8d, eax

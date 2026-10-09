@@ -24,6 +24,7 @@ text_begin:
 %include "img.asm"
 %include "player.asm"
 %include "ui_core.asm"
+%include "anim.asm"
 %include "auth.asm"
 %include "localsrv.asm"
 %include "audio.asm"
@@ -88,6 +89,9 @@ cli_run_ms:     resd 1                  ; --run-ms N: keep running N ms after th
 run_t0:         resq 1
 cli_dlg_name:    resq 1                  ; --dlg-name / --dlg-desc: text that appears in the dialog fields when it opens (tests)
 cli_dlg_desc:    resq 1
+cli_anim:       resd 1                  ; --anim
+cli_anim_hold:  resd 1
+cli_shot_ms:    resd 1                  ; --shot-ms N
 cli_hold:       resd 1                  ; --hold: with --dump, keep running until the player page posts "quit"
 dump_tmp:       resd 1
 
@@ -116,6 +120,9 @@ WSTR a_edge, "--edge-path"
 WSTR a_imgb, "--img-budget"
 WSTR a_nobrowser, "--no-browser"
 WSTR a_hold, "--hold"
+WSTR a_anim, "--anim"
+WSTR a_animhold, "--anim-hold"
+WSTR a_shotms, "--shot-ms"
 WSTR a_runms, "--run-ms"
 WSTR a_dlgname, "--dlg-name"
 WSTR a_dlgdesc, "--dlg-desc"
@@ -181,6 +188,15 @@ ZSTR d_q0, "queue_first="
 ZSTR d_saved, "saved_count="
 ZSTR d_notsaved, "not_saved_count="
 ZSTR d_asked, "asked_count="
+ZSTR d_afr, "anim_frames="
+ZSTR d_aon, "anim_on="
+ZSTR d_abusy, "anim_busy="
+ZSTR d_aq, "anim_queue="
+ZSTR d_af, "anim_full="
+ZSTR d_ahv, "anim_hover="
+ZSTR d_smain, "scroll_main="
+ZSTR d_sside, "scroll_side="
+ZSTR d_squeue, "scroll_queue="
 ZSTR d_pcalls, "paint_msgs="
 ZSTR d_scalls, "size_msgs="
 ZSTR d_bbw, "backbuf_w="
@@ -362,8 +378,15 @@ PROC parse_cli, 4
         lea     rdx, [a_hold]
         call    arg_is
         test    eax, eax
-        jz      .a7
+        jz      .a6d
         mov     dword [cli_hold], 1
+        jmp     .next
+.a6d:   mov     rcx, rbx
+        lea     rdx, [a_anim]
+        call    arg_is
+        test    eax, eax
+        jz      .a7
+        mov     dword [cli_anim], 1             ; --anim: animations stay on in a --dump / --screenshot run
         jmp     .next
 .a7:    test    rsi, rsi
         jz      .next                           ; remaining flags all take a value
@@ -572,8 +595,28 @@ PROC parse_cli, 4
         lea     rdx, [a_dlgdesc]
         call    arg_is
         test    eax, eax
-        jz      .b17
+        jz      .b16g
         mov     [cli_dlg_desc], rsi
+        inc     qword loc(2)
+        jmp     .next
+.b16g:  mov     rcx, rbx
+        lea     rdx, [a_shotms]
+        call    arg_is
+        test    eax, eax
+        jz      .b16h
+        mov     rcx, rsi
+        call    w_atoi
+        mov     [cli_shot_ms], eax              ; --shot-ms N: take the screenshot N ms after start (animations mid-way)
+        inc     qword loc(2)
+        jmp     .next
+.b16h:  mov     rcx, rbx
+        lea     rdx, [a_animhold]
+        call    arg_is
+        test    eax, eax
+        jz      .b17
+        mov     rcx, rsi
+        call    w_atoi
+        mov     [cli_anim_hold], eax            ; --anim-hold P: sliding panels frozen P % of the way (screenshots)
         inc     qword loc(2)
         jmp     .next
 .b17:   mov     rcx, rbx
@@ -823,6 +866,10 @@ PROC run_late_act, 2
         jmp     .next
 .out:   EPROC
 
+section .data
+wheel_x:        dd 20, 0, 0
+section .text
+
 ; ecx = index into the --act table: activates its hit target, or ends the process when it is not on screen
 PROC run_act_at, 2
         lea     rax, [cli_act_id]
@@ -846,6 +893,31 @@ PROC run_act_at, 2
         call    edit_pretranslate
         jmp     .painted
 .real:
+        mov     eax, r12d
+        sub     eax, 0xF001                     ; pseudo targets 0xF001 / 2 / 3: mouse wheel over the page / sidebar / queue,
+        cmp     eax, 2                          ; argument n = n notches down, 256 + n = n notches up
+        ja      .find0
+        mov     ecx, -120
+        imul    ecx, r13d
+        cmp     r13d, 256
+        jb      .wh
+        mov     ecx, 120
+        mov     edx, r13d
+        sub     edx, 256
+        imul    ecx, edx
+.wh:    lea     rdx, [wheel_x]
+        mov     edx, [rdx+rax*4]
+        add     edx, [lay_main_x]
+        cmp     eax, 1
+        jne     .wh2
+        xor     edx, edx                        ; sidebar: x = 0
+.wh2:   cmp     eax, 2
+        jne     .wh3
+        mov     edx, [lay_q_x]
+        inc     edx
+.wh3:   call    ui_wheel
+        jmp     .painted
+.find0:
         xor     esi, esi
 .find:  cmp     esi, [hit_n]
         jae     .missing
@@ -1039,6 +1111,25 @@ PROC dump_state, 4
         DUMPNUM d_dlgpub, dword [dlg_public]
         DUMPNUM d_menu, dword [menu_open]
         DUMPNUM d_menun, dword [menu_n]
+        DUMPNUM d_afr, dword [anim_frames]
+        DUMPNUM d_aon, dword [anim_on]
+        DUMPNUM d_abusy, dword [anim_busy]
+        mov     ecx, AC_QUEUE
+        call    anim_get
+        mov     [dump_tmp], eax
+        DUMPNUM d_aq, dword [dump_tmp]
+        mov     ecx, AC_FULL
+        call    anim_get
+        mov     [dump_tmp], eax
+        DUMPNUM d_af, dword [dump_tmp]
+        mov     ecx, [anim_hk_id]
+        mov     edx, [anim_hk_arg]
+        call    anim_hv
+        mov     [dump_tmp], eax
+        DUMPNUM d_ahv, dword [dump_tmp]
+        DUMPNUM d_smain, dword [scroll_main]
+        DUMPNUM d_sside, dword [scroll_side]
+        DUMPNUM d_squeue, dword [scroll_queue]
         DUMPNUM d_pcalls, dword [paint_calls]
         DUMPNUM d_scalls, dword [size_calls]
         DUMPNUM d_bbw, dword [bb_w]
@@ -1272,6 +1363,15 @@ PROC start, 8
         mov     eax, [set_scale]
         mov     [cli_scale], eax
 .scl:   call    gfx_init
+        call    anim_init
+        cmp     dword [cli_anim], 0
+        jne     .animok
+        cmp     dword [cli_dump], 0             ; tests (--dump / --screenshot) see every animation finished at once
+        jne     .animoff
+        cmp     qword [cli_shot], 0
+        je      .animok
+.animoff: mov   dword [anim_on], 0
+.animok:
         mov     dword [detail_sel], -1
         ; scale: system DPI, or the --scale override
         call    GetDpiForSystem

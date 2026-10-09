@@ -300,9 +300,17 @@ PROC dlg_commit, 4
 .out:   EPROC
 
 ; The panel and its controls.   Locals: 0 x, 1 y, 2 w, 3 h, 4 pad, 5 cursor y
-PROC paint_dialog, 8
+PROC paint_dialog, 2
         cmp     dword [dlg_kind], 0
         je      .out
+        mov     ecx, AC_DLG
+        call    anim_get
+        mov     [gfx_alpha], eax
+        call    paint_dialog_body
+        mov     dword [gfx_alpha], 256
+.out:   EPROC
+
+PROC paint_dialog_body, 8
         mov     ecx, 0xB0000000                 ; dim everything behind
         call    gfx_color
         RECT    0, 0, dword [ui_w], dword [ui_h]

@@ -51,6 +51,8 @@ extern CreateFontIndirectW, CreateSolidBrush, SetTextColor, SetBkColor
 %define H_COPY_AUTH   35
 %define H_TEST_AUDIO  36
 %define H_LIKE        37                ; arg: see like_uri_for
+%define H_CARD_PLAY   26
+%define H_PILL        27
 
 %define BA_NONE       0
 %define BA_SETTINGS   1                 ; banner action: open Settings
@@ -224,10 +226,11 @@ hit_add:
         imul    rax, rax, HIT_SIZE
         lea     rcx, [hit_tab]
         add     rax, rcx
-        mov     [rax], r10d
-        mov     [rax+4], r11d
         sub     r8d, r10d
         sub     r9d, r11d
+        mov     [rax], r10d
+        add     r11d, [ui_dy]                   ; the view being drawn may be sliding: rectangles follow it
+        mov     [rax+4], r11d
         mov     [rax+8], r8d
         mov     [rax+12], r9d
         mov     edx, [rsp+40]

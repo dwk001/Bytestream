@@ -1215,6 +1215,60 @@ def main():
         shutil.rmtree(d, ignore_errors=True)
 
 
+    if ONLY in (None, 'm8'):
+        # ---- M8a: animation clock, hover fades, smooth scrolling, sliding panels
+        W = 61441                    # pseudo --act targets: mouse wheel over the page (+1 sidebar, +2 queue); n = notches down, 256 + n = up
+        base = ["--demo", "--dump", "--page", str(PAGE_LIBRARY), "--tab", "1", "--size", "1100x500"]
+        rc, out, st, _ = run(base + ["--act", f"{W},3"])
+        check(st.get("scroll_main") == "180" and st.get("scroll_side") == "0",
+              "wheel: three notches with the pointer over the page scroll the page, not the sidebar", str(st.get("scroll_main")))
+        rc, out, st, _ = run(base + ["--act", f"{W},5", "--act", f"{W},258"])
+        check(st.get("scroll_main") == "180", "wheel: scrolling back up by two notches", str(st.get("scroll_main")))
+        rc, out, st, _ = run(base + ["--act", f"{W + 1},3"])
+        check(st.get("scroll_side") == "180" and st.get("scroll_main") == "0", "wheel: over the sidebar it scrolls the sidebar", str((st.get("scroll_side"), st.get("scroll_main"))))
+        rc, out, st, _ = run(base + ["--act", f"{W},3"])
+        check(st.get("anim_on") == "0", "animations are off in --dump runs (tests see final states)")
+
+        rc, out, st, _ = run(base + ["--anim", "--act", f"{W},3", "--run-ms", "700"])
+        check(st.get("scroll_main") == "180" and st.get("anim_busy") == "0" and int(st.get("anim_frames", "0")) >= 5,
+              "smooth scroll: ends exactly on the target after several frames", str((st.get("scroll_main"), st.get("anim_frames"), st.get("anim_busy"))))
+        rc, out, st, _ = run(base + ["--anim", "--act", f"{W},3", "--act", f"{W},259", "--run-ms", "700"])
+        check(st.get("scroll_main") == "0", "smooth scroll: down three then up three lands back at the top", str(st.get("scroll_main")))
+
+        rc, out, st, _ = run(["--demo", "--dump", "--anim", "--run-ms", "800"])
+        check(st.get("anim_busy") == "0" and int(st.get("anim_frames", "99")) <= 4,
+              "idle: nothing animating means no frames are drawn", str((st.get("anim_frames"), st.get("anim_busy"))))
+
+        rc, out, st, _ = run(["--demo", "--dump", "--anim", "--hover", "100,100", "--run-ms", "700"])
+        check(st.get("anim_hover") == "256" and st.get("anim_busy") == "0" and int(st.get("anim_frames", "0")) >= 4,
+              "hover: the highlight fades in over several frames and settles at full strength", str((st.get("anim_hover"), st.get("anim_frames"))))
+        rc, out, st, _ = run(["--demo", "--dump", "--hover", "100,100", "--run-ms", "400"])
+        check(st.get("anim_hover") == "256" and st.get("anim_frames") is not None and int(st["anim_frames"]) <= 4,
+              "hover: without animations it is at full strength at once", str((st.get("anim_hover"), st.get("anim_frames"))))
+
+        rc, out, st, _ = run(["--demo", "--dump", "--play", "--queue", "--anim", "--run-ms", "800"])
+        check(st.get("anim_queue") == "256" and st.get("queue_open") == "1" and int(st.get("anim_frames", "0")) >= 4,
+              "queue panel: slides in over several frames", str((st.get("anim_queue"), st.get("anim_frames"))))
+        rc, out, st, _ = run(["--demo", "--dump", "--play", "--queue", "--run-ms", "300"])
+        check(st.get("anim_queue") == "256" and int(st.get("anim_frames", "99")) <= 4, "queue panel: no animation, no extra frames", str((st.get("anim_queue"), st.get("anim_frames"))))
+        rc, out, st, _ = run(["--demo", "--dump", "--play", "--queue", "--anim", "--act", f"{H_QUEUE},0", "--run-ms", "900"])
+        check(st.get("anim_queue") == "0" and st.get("queue_open") == "0", "queue panel: slides out again when closed", str((st.get("anim_queue"), st.get("queue_open"))))
+        rc, out, st, _ = run(["--demo", "--dump", "--play", "--queue", "--anim", "--anim-hold", "25", "--run-ms", "300"])
+        check(0 < int(st.get("anim_queue", "0")) < 256, "queue panel: --anim-hold freezes it part of the way", str(st.get("anim_queue")))
+        rc, out, st, _ = run(["--demo", "--dump", "--play", "--fullscreen", "--anim", "--run-ms", "900"])
+        check(st.get("anim_full") == "256" and st.get("fullscreen") == "1" and int(st.get("anim_frames", "0")) >= 4,
+              "full screen: slides up over several frames", str((st.get("anim_full"), st.get("anim_frames"))))
+        rc, out, st, _ = run(["--demo", "--dump", "--play", "--fullscreen", "--anim", "--act", f"{H_FS_CLOSE},0", "--run-ms", "900"])
+        check(st.get("anim_full") == "0" and st.get("fullscreen") == "0", "full screen: slides back down when closed", str((st.get("anim_full"), st.get("fullscreen"))))
+        rc, out, st, path = run(["--demo", "--dump", "--play", "--fullscreen", "--anim", "--anim-hold", "50"], shot=True)
+        if path and os.path.exists(path):
+            top = pixel(path, 700, 20)          # the page behind the half-way sheet is still visible at the top
+            sheet = pixel(path, 700, 700)       # and the sheet covers the bottom
+            check(top != sheet, "full screen: half-way, the page shows above the sheet", str((top, sheet)))
+            os.remove(path)
+        else:
+            check(False, "full screen: half-way screenshot taken")
+
     # ---- the harness itself must fail loudly when a target is absent
     rc, out, st, _ = run(["--demo", "--act", "99,0"])
     check(rc == 3 and "not on screen" in out, "an --act with no matching on-screen target fails (exit 3)")
