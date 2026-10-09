@@ -151,7 +151,7 @@ class Handler(BaseHTTPRequestHandler):
             if STATE.deny:
                 loc = g("redirect_uri") + "?" + urllib.parse.urlencode({"error": "access_denied", "state": g("state")})
             else:
-                code = "code-" + secrets.token_hex(8)
+                code = "code-" + secrets.token_urlsafe(600)         # real Spotify codes are 740+ characters long
                 STATE.codes[code] = {"challenge": g("code_challenge"), "redirect_uri": g("redirect_uri"),
                                      "client_id": g("client_id"), "scope": g("scope")}
                 loc = g("redirect_uri") + "?" + urllib.parse.urlencode({"code": code, "state": g("state")})

@@ -1252,7 +1252,7 @@ def main():
         rc, out, st1, _ = run(["--demo", "--dump", "--anim", "--run-ms", "600"])
         rc, out, st2, _ = run(["--demo", "--dump", "--anim", "--run-ms", "2400"])
         f1, f2 = int(st1.get("anim_frames", "0")), int(st2.get("anim_frames", "0"))
-        check(st2.get("anim_busy") == "0" and f1 > 0 and f2 - f1 <= 1,
+        check(st2.get("anim_busy") == "0" and f1 > 0 and f2 - f1 <= 3,          # a few stray paints (focus, DWM) are fine; continuous drawing would add ~100
               "idle: with nothing animating, running four times longer draws no more frames", f"{f1} frames in 0.6 s, {f2} in 2.4 s")
 
         rc, out, st, _ = run(["--demo", "--dump", "--anim", "--hover", "100,100", "--run-ms", "700"])
