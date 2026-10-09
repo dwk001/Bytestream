@@ -59,6 +59,12 @@ mmi_min_w:      resd 1
 mmi_min_h:      resd 1
 
 section .data
+ZSTR l_w_class, "window: RegisterClassExW atom "
+ZSTR l_w_err1, "window: last error after RegisterClassExW "
+ZSTR l_w_hwnd, "window: CreateWindowExW hwnd "
+ZSTR l_w_err2, "window: last error after CreateWindowExW "
+ZSTR l_w_size, "window: outer width "
+ZSTR l_w_size2, "window: outer height "
 WSTR cls_name, "ByteStreamWindow"
 WSTR win_title, "ByteStream"
 WSTR cls_edit, "EDIT"
@@ -1005,6 +1011,13 @@ PROC window_create, 8
         mov     [rdi+64], rax
         lea     rcx, [wc]
         call    RegisterClassExW
+        lea     rcx, [l_w_class]
+        movzx   edx, ax
+        call    log_num
+        call    GetLastError
+        lea     rcx, [l_w_err1]
+        mov     edx, eax
+        call    log_num
         ; outer size from the wanted client size
         mov     dword [rc_buf], 0
         mov     dword [rc_buf+4], 0
@@ -1041,6 +1054,19 @@ PROC window_create, 8
         mov     qword outarg(12), 0
         call    CreateWindowExW
         mov     [hwnd], rax
+        lea     rcx, [l_w_hwnd]
+        mov     rdx, rax
+        call    log_num
+        call    GetLastError
+        lea     rcx, [l_w_err2]
+        mov     edx, eax
+        call    log_num
+        lea     rcx, [l_w_size]
+        mov     rdx, loc(3)
+        call    log_num
+        lea     rcx, [l_w_size2]
+        mov     rdx, loc(4)
+        call    log_num
         EPROC
 
 ; ---------------------------------------------------------------- setup inputs -> settings
