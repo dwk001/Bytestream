@@ -15,6 +15,8 @@ set_port:       resd 1
 set_scale:      resd 1                  ; percent; 0 = follow the system DPI
 set_theme:      resd 1
 set_volume:     resd 1
+set_win_w:      resd 1                  ; window client size in logical pixels (0 = default)
+set_win_h:      resd 1
 set_loaded:     resd 1                  ; 1 once a settings file was found
 
 section .data
@@ -25,6 +27,8 @@ ZSTR k_s_port, "port="
 ZSTR k_s_theme, "theme="
 ZSTR k_s_scale, "scale="
 ZSTR k_s_volume, "volume="
+ZSTR k_s_winw, "winw="
+ZSTR k_s_winh, "winh="
 ZSTR s_nl_lf, `\n`
 ZSTR s_redirect_pre, "http://127.0.0.1:"
 ZSTR s_redirect_post, "/callback"
@@ -196,13 +200,41 @@ PROC settings_apply_line, 2
         lea     rdx, [k_s_volume]
         call    u8_starts
         test    eax, eax
-        jz      .out
+        jz      .winw
         mov     rcx, loc(0)
         add     rcx, 7
         call    json_int
         cmp     eax, 100
         ja      .out
         mov     [set_volume], eax
+        jmp     .out
+.winw:  mov     rcx, loc(0)
+        lea     rdx, [k_s_winw]
+        call    u8_starts
+        test    eax, eax
+        jz      .winh
+        mov     rcx, loc(0)
+        add     rcx, 5
+        call    json_int
+        cmp     eax, 640
+        jb      .out
+        cmp     eax, 8192
+        ja      .out
+        mov     [set_win_w], eax
+        jmp     .out
+.winh:  mov     rcx, loc(0)
+        lea     rdx, [k_s_winh]
+        call    u8_starts
+        test    eax, eax
+        jz      .out
+        mov     rcx, loc(0)
+        add     rcx, 5
+        call    json_int
+        cmp     eax, 400
+        jb      .out
+        cmp     eax, 8192
+        ja      .out
+        mov     [set_win_h], eax
 .out:   EPROC
 
 PROC settings_load, 3
@@ -281,6 +313,40 @@ PROC settings_save, 4
         call    buf_append_z
         lea     rcx, loc(3)
         mov     edx, [np_vol]
+        call    buf_append_u64
+        lea     rcx, loc(3)
+        lea     rdx, [s_nl_lf]
+        call    buf_append_z
+        cmp     dword [ui_w], 0
+        je      .nowin
+        mov     eax, [ui_w]                     ; physical -> logical pixels
+        imul    rax, 65536
+        xor     edx, edx
+        mov     ecx, [ui_scale]
+        test    ecx, ecx
+        jz      .nowin
+        div     rcx
+        mov     [set_win_w], eax
+        mov     eax, [ui_h]
+        imul    rax, 65536
+        xor     edx, edx
+        mov     ecx, [ui_scale]
+        div     rcx
+        mov     [set_win_h], eax
+.nowin: lea     rcx, loc(3)
+        lea     rdx, [k_s_winw]
+        call    buf_append_z
+        lea     rcx, loc(3)
+        mov     edx, [set_win_w]
+        call    buf_append_u64
+        lea     rcx, loc(3)
+        lea     rdx, [s_nl_lf]
+        call    buf_append_z
+        lea     rcx, loc(3)
+        lea     rdx, [k_s_winh]
+        call    buf_append_z
+        lea     rcx, loc(3)
+        mov     edx, [set_win_h]
         call    buf_append_u64
         lea     rcx, loc(3)
         lea     rdx, [s_nl_lf]

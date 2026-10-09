@@ -21,6 +21,7 @@ ZSTR a_albums_items, "albums.items"
 ZSTR a_playlists_items, "playlists.items"
 ZSTR a_artists_items, "artists.items"
 ZSTR a_demo_user, "Demo Listener"
+ZSTR a_demo_id, "demo"
 WSTR w_artist_na, "Artist pages are not available yet"
 WSTR w_need_signin, "Sign in with Spotify first"
 
@@ -57,6 +58,11 @@ PROC app_free_all, 0
 ; Fills every list from the embedded fixtures (the same JSON shapes the live API returns).
 PROC app_load_demo, 0
         call    app_free_all
+        mov     rcx, [user_id]                  ; the demo user owns the demo playlists
+        call    mem_free
+        lea     rcx, [a_demo_id]
+        call    u8_dup
+        mov     [user_id], rax
         lea     rcx, [fx_playlists]
         lea     rdx, [a_items]
         lea     r8, [lst_playlists]
@@ -239,6 +245,13 @@ PROC app_open_detail, 2
         mov     rcx, [rbx+CD_SUB]
         call    w_dup
         mov     [det_sub], rax
+        mov     rcx, [det_id]
+        call    mem_free
+        mov     rcx, [rbx+CD_ID]
+        call    u8_dup0
+        mov     [det_id], rax
+        mov     eax, [rbx+CD_FLAGS]
+        mov     [det_flags], eax
         mov     rcx, [det_img_m]
         call    mem_free
         mov     rcx, [rbx+CD_IMG_M]
@@ -285,6 +298,36 @@ PROC app_open_detail, 2
         mov     eax, dword loc(0)
         mov     [detail_sel], eax
         EPROC
+
+; -> rax = the Card of the open playlist page in the library list (matched by id), or 0
+det_card:
+        mov     rdx, [det_id]
+        test    rdx, rdx
+        jz      .none
+        xor     ecx, ecx
+        mov     r8, [lst_playlists+LS_PTR]
+.l:     cmp     rcx, [lst_playlists+LS_COUNT]
+        jae     .none
+        mov     rax, [r8+CD_ID]
+        push    rcx
+        push    rdx
+        push    r8
+        sub     rsp, 40
+        mov     rcx, rax
+        call    u8_eq
+        add     rsp, 40
+        pop     r8
+        pop     rdx
+        pop     rcx
+        test    eax, eax
+        jnz     .yes
+        add     r8, CD_SIZE
+        inc     ecx
+        jmp     .l
+.yes:   mov     rax, r8
+        ret
+.none:  xor     eax, eax
+        ret
 
 ; ---------------------------------------------------------------- activation (clicks)
 ; ecx = hit id, edx = hit arg -> eax = 1 when the screen must be repainted
@@ -358,6 +401,20 @@ PROC ui_activate, 6
         je      .testaudio
         cmp     ecx, H_LIKE
         je      .like
+        cmp     ecx, H_NEW_PL
+        je      .newpl
+        cmp     ecx, H_DET_EDIT
+        je      .detedit
+        cmp     ecx, H_DET_DELETE
+        je      .detdelete
+        cmp     ecx, H_DLG_OK
+        je      .dlgok
+        cmp     ecx, H_DLG_CANCEL
+        je      .dlgcancel
+        cmp     ecx, H_DLG_PUBLIC
+        je      .dlgpublic
+        cmp     ecx, H_DLG_BG
+        je      .done                           ; modal: clicks outside the panel do nothing
         cmp     ecx, H_MENU_ITEM
         je      .menuitem
         cmp     ecx, H_MENU_BG
@@ -505,6 +562,36 @@ PROC ui_activate, 6
         jmp     .done
 .copydiag:
         call    app_copy_diagnostics
+        jmp     .done
+.newpl: mov     ecx, DK_CREATE
+        xor     edx, edx
+        call    dlg_open
+        jmp     .done
+.detedit:
+        mov     ecx, SRC_PLAYLISTS              ; the open page's card: find it by id in the library list
+        call    det_card
+        test    rax, rax
+        jz      .done
+        mov     rdx, rax
+        mov     ecx, DK_EDIT
+        call    dlg_open
+        jmp     .done
+.detdelete:
+        mov     ecx, SRC_PLAYLISTS
+        call    det_card
+        test    rax, rax
+        jz      .done
+        mov     rdx, rax
+        mov     ecx, DK_DELETE
+        call    dlg_open
+        jmp     .done
+.dlgok: call    dlg_commit
+        jmp     .done
+.dlgcancel:
+        call    dlg_clear
+        jmp     .done
+.dlgpublic:
+        xor     dword [dlg_public], 1
         jmp     .done
 .menuitem:
         mov     ecx, dword loc(1)
@@ -696,6 +783,16 @@ PROC ui_mouse_up, 2
 
 ; ecx = wheel delta (signed, 120 per notch), edx = mouse x
 PROC ui_wheel, 2
+        cmp     dword [menu_open], 0
+        je      .nomenu
+        cmp     dword [dlg_kind], 0
+        jne     .none
+        imul    ecx, ecx, -1                    ; wheel up = negative scroll
+        call    menu_wheel
+        jmp     .ok
+.nomenu:
+        cmp     dword [dlg_kind], 0
+        jne     .none
         cmp     dword [fullscreen], 0
         jne     .none
         movsxd  rax, ecx
@@ -749,7 +846,11 @@ PROC ui_key, 2
         cmp     ecx, VK_DOWN
         je      .down
         jmp     .out
-.esc:   cmp     dword [menu_open], 0
+.esc:   cmp     dword [dlg_kind], 0
+        je      .esc1
+        call    dlg_clear
+        jmp     .yes
+.esc1:  cmp     dword [menu_open], 0
         je      .esc2
         call    menu_close
         jmp     .yes

@@ -49,9 +49,16 @@ WSTR w_signout, "Sign out"
 WSTR w_theme_dark, "Dark"
 WSTR w_theme_mid, "Midnight"
 WSTR w_theme_light, "Light"
+WSTR w_shortcuts, "Keyboard and mouse"
+WSTR w_sc1, "Space  Play / pause        N / P  Next / previous track"
+WSTR w_sc2, "Left / Right  Seek 5 seconds        Up / Down  Volume"
+WSTR w_sc3, "F or F11  Full screen        Esc  Close a menu, dialog or full screen"
+WSTR w_sc4, "Right-click a track, card or queue row for its menu (add to queue, save, add to a playlist, copy link ...)"
+WSTR w_sc5, "Media keys work while ByteStream is focused, and Windows shows what is playing."
 WSTR w_about1, "ByteStream for Windows, written in x86-64 assembly."
 WSTR w_about2, "Playback uses the official Spotify Web Playback SDK and needs Spotify Premium."
 WSTR w_about3, "Not affiliated with Spotify. Spotify is a trademark of Spotify AB."
+WSTR w_about4, `Music, metadata and cover art come from Spotify; use "Open in Spotify" in a right-click menu to see any item there.`
 WSTR w_play, "Play"
 WSTR w_cap_playlist, "PLAYLIST"
 WSTR w_cap_album, "ALBUM"
@@ -86,6 +93,8 @@ WSTR w_diag, "Diagnostics"
 WSTR w_open_log, "Open log folder"
 WSTR w_copy_diag, "Copy diagnostics"
 WSTR w_test_audio, "Test audio"
+WSTR w_edit_btn, "Edit"
+WSTR w_delete_btn, "Delete"
 WSTR w_diag_hint, "If something goes wrong, copy the diagnostics and send them with your report. Tokens are never logged."
 WSTR w_no_results, "No results"
 
@@ -567,7 +576,7 @@ PROC page_detail, 8
         mov     r8d, ebx
         call    draw_icon_button
         cmp     dword [det_kind], KIND_ALBUM    ; (saving a playlist = following it; its own heart would delete the user's playlists)
-        jne     .noheart
+        jne     .plbuttons
         S       44
         mov     r8d, eax                        ; heart box
         S       16
@@ -582,6 +591,44 @@ PROC page_detail, 8
         mov     outarg(5), rax
         mov     qword outarg(6), 1
         call    draw_heart
+        jmp     .noheart
+.plbuttons:
+        test    dword [det_flags], CF_MINE      ; only playlists we own can be edited or deleted
+        jz      .noheart
+        S       16
+        lea     edi, [r14+rsi]
+        add     edi, eax                        ; x of the first button
+        S       40
+        mov     ecx, eax                        ; button height
+        sub     esi, ecx
+        shr     esi, 1
+        add     esi, ebx                        ; y (centred on the play button)
+        lea     rcx, [w_edit_btn]
+        mov     edx, edi
+        mov     r8d, esi
+        S       92
+        mov     r9d, eax
+        S       40
+        mov     outarg(5), rax
+        mov     qword outarg(6), H_DET_EDIT
+        mov     qword outarg(7), 0
+        mov     qword outarg(8), 1
+        call    draw_button
+        S       92
+        lea     edi, [rdi+rax]
+        S       10
+        add     edi, eax
+        lea     rcx, [w_delete_btn]
+        mov     edx, edi
+        mov     r8d, esi
+        S       100
+        mov     r9d, eax
+        S       40
+        mov     outarg(5), rax
+        mov     qword outarg(6), H_DET_DELETE
+        mov     qword outarg(7), 0
+        mov     qword outarg(8), 1
+        call    draw_button
 .noheart:
         S       24
         add     r12d, r13d
@@ -657,6 +704,10 @@ PROC draw_edit_frame, 4
         mov     eax, stk5
         cmp     eax, 2
         je      .port
+        cmp     eax, 4
+        je      .dn
+        cmp     eax, 5
+        je      .dd
         mov     [edit_cx], ecx
         mov     [edit_cy], edx
         mov     [edit_cw], r8d
@@ -668,6 +719,18 @@ PROC draw_edit_frame, 4
         mov     [edit_pw], r8d
         mov     [edit_ph], r9d
         or      dword [edit_want], 4
+        jmp     .out
+.dn:    mov     [edit_dnx], ecx
+        mov     [edit_dnx+4], edx
+        mov     [edit_dnx+8], r8d
+        mov     [edit_dnx+12], r9d
+        or      dword [edit_want], 8
+        jmp     .out
+.dd:    mov     [edit_ddx], ecx
+        mov     [edit_ddx+4], edx
+        mov     [edit_ddx+8], r8d
+        mov     [edit_ddx+12], r9d
+        or      dword [edit_want], 16
 .out:   EPROC
 
 ; The redirect URI in a box with a Copy button.  ecx = x, edx = y, r8d = w -> eax = y below
@@ -948,6 +1011,28 @@ PROC page_settings, 8
         add     r12d, edi
         S       36
         add     r12d, eax
+        lea     rcx, [w_shortcuts]
+        mov     edx, [pg_x]
+        mov     r8d, r12d
+        mov     r9d, [pg_w]
+        call    draw_section
+        mov     r12d, eax
+        SETFONT F_BODY
+        SETCOL  T_MUTED_FG
+        S       26
+        mov     ebx, eax
+        TXTL    w_sc1, dword [pg_x], r12d, dword [pg_w], ebx
+        add     r12d, ebx
+        TXTL    w_sc2, dword [pg_x], r12d, dword [pg_w], ebx
+        add     r12d, ebx
+        TXTL    w_sc3, dword [pg_x], r12d, dword [pg_w], ebx
+        add     r12d, ebx
+        TXTL    w_sc4, dword [pg_x], r12d, dword [pg_w], ebx
+        add     r12d, ebx
+        TXTL    w_sc5, dword [pg_x], r12d, dword [pg_w], ebx
+        add     r12d, ebx
+        S       30
+        add     r12d, eax
         lea     rcx, [w_about]
         mov     edx, [pg_x]
         mov     r8d, r12d
@@ -966,6 +1051,8 @@ PROC page_settings, 8
         TXTL    w_about2, dword [pg_x], r12d, dword [pg_w], ebx
         add     r12d, ebx
         TXTL    w_about3, dword [pg_x], r12d, dword [pg_w], ebx
+        add     r12d, ebx
+        TXTL    w_about4, dword [pg_x], r12d, dword [pg_w], ebx
         add     r12d, ebx
         mov     eax, r12d
         call    page_end

@@ -1,0 +1,37 @@
+name: release
+
+# Push a tag like v0.1.0 to build bytestream.exe on Windows and attach it, with its linker map, to a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install NASM
+        shell: pwsh
+        run: |
+          choco install nasm -y --no-progress
+          "C:\Program Files\NASM" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Build
+        shell: pwsh
+        run: python tools/build.py
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item build\bytestream.exe dist\ByteStream.exe
+          Copy-Item build\bytestream.map dist\ByteStream.map
+          Copy-Item README.md dist\README.md
+          Compress-Archive -Path dist\* -DestinationPath ByteStream-${{ github.ref_name }}-windows-x64.zip
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: ByteStream-${{ github.ref_name }}-windows-x64.zip

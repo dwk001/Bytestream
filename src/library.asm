@@ -28,6 +28,8 @@ det_busy:       resd 1
 det_total:      resd 1
 det_msg:        resq 1                  ; static UTF-16 line shown instead of the track list, or 0
 det_img_m:      resq 1                  ; the open album's medium cover (UTF-8, owned)
+det_id:         resq 1                  ; the open playlist / album id (UTF-8, owned)
+det_flags:      resd 1                  ; its CD_FLAGS (collaborative / mine / public)
 search_gen:     resd 1
 srch_busy:      resd 1                  ; a search request is in flight
 img_rr:         resd 1
@@ -68,11 +70,19 @@ PROC api_get, 0
         EPROC
 
 ; rcx = path (UTF-8, starts with "/v1/"), edx = tag, r8 = job argument, r9 = method (static UTF-16): a body-less
-; request on the API worker.   Bufs: URL top 5
-PROC api_call, 8
+; request on the API worker
+PROC api_call, 0
+        mov     qword outarg(5), 0
+        call    api_send
+        EPROC
+
+; The same with a JSON body: [rbp+48] = body (UTF-8, copied) or 0.   Bufs: URL top 5.   Locals: 6 body
+PROC api_send, 8
         mov     loc(0), rdx
         mov     loc(1), r8
         mov     loc(2), r9
+        mov     rax, stk5
+        mov     loc(6), rax
         mov     rdx, rcx
         BUFZERO 5
         lea     rcx, loc(5)
@@ -83,8 +93,13 @@ PROC api_call, 8
         mov     r9, loc(2)
         mov     rax, loc(5)
         mov     outarg(5), rax
-        mov     qword outarg(6), 0
-        mov     qword outarg(7), 0
+        mov     rax, loc(6)
+        mov     outarg(6), rax
+        xor     eax, eax
+        cmp     qword loc(6), 0
+        je      .nb
+        mov     eax, JF_JSON
+.nb:    mov     outarg(7), rax
         mov     qword outarg(8), 0
         call    net_submit
         lea     rcx, loc(5)
@@ -305,9 +320,8 @@ PROC h_list, 6
 .out:   EPROC
 
 ; ---------------------------------------------------------------- playlist and album pages
-; rcx = Card* of the page being opened (its details are already in the det_* globals)
-PROC real_load_detail, 4
-        mov     loc(0), rcx
+; The page being opened is already described by the det_* globals (set by app_open_detail).
+PROC real_load_detail, 2
         inc     dword [det_gen]
         mov     rcx, [det_next]
         call    mem_free
@@ -315,13 +329,26 @@ PROC real_load_detail, 4
         mov     qword [det_msg], 0
         mov     dword [det_total], 0
         mov     dword [det_busy], 0
-        mov     rbx, loc(0)
-        mov     eax, [rbx+CD_KIND]
+        call    det_request
+        EPROC
+
+; Reloads the open playlist / album from the start (after its tracks changed)
+PROC det_reload, 0
+        cmp     dword [page], PAGE_DETAIL
+        jne     .out
+        lea     rcx, [lst_detail]
+        call    tracks_free
+        call    real_load_detail
+.out:   EPROC
+
+; Requests the first page of the tracks of the page in det_id / det_kind.   Bufs: URL top 3
+PROC det_request, 4
+        mov     eax, [det_kind]
         cmp     eax, KIND_PLAYLIST
         je      .go
         cmp     eax, KIND_ALBUM
         jne     .out                            ; artists have no page yet
-.go:    mov     rcx, [rbx+CD_ID]
+.go:    mov     rcx, [det_id]
         test    rcx, rcx
         jz      .out
         cmp     byte [rcx], 0
@@ -334,7 +361,7 @@ PROC real_load_detail, 4
         lea     rdx, [lp_al_pre]
 .pre:   call    buf_append_z
         lea     rcx, loc(3)
-        mov     rdx, [rbx+CD_ID]
+        mov     rdx, [det_id]
         call    buf_append_z
         lea     rcx, loc(3)
         lea     rdx, [lp_pl_post]

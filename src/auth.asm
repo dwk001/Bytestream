@@ -23,6 +23,7 @@ extern BCryptGenRandom, BCryptHash, CryptProtectData, CryptUnprotectData, LocalF
 
 section .bss
 auth_state:     resd 1
+refresh_lock:    resd 1
 auth_lock:      resd 1
 auth_verifier:  resb 72                 ; 64 chars + NUL
 auth_challenge: resb 48                 ; 43 chars + NUL
@@ -366,9 +367,22 @@ PROC auth_refresh_body, 1
         call    buf_append_urlenc
         EPROC
 
-; ---------------------------------------------------------------- refresh on the API worker
-; -> eax = 1 when a fresh access token was installed.   Locals: loc(0) token URL; Bufs: body top 3, response top 6, url top 9
-PROC auth_refresh_blocking, 12
+; ---------------------------------------------------------------- refresh on a worker thread
+; Both the API worker and the local server's token route (the player page asks for a token whenever its SDK needs
+; one) may refresh, so the whole exchange runs under refresh_lock.
+; -> eax = 1 when a fresh access token was installed
+PROC auth_refresh_blocking, 2
+        lea     rcx, [refresh_lock]
+        call    lock_acquire
+        call    auth_refresh_locked
+        mov     ebx, eax
+        lea     rcx, [refresh_lock]
+        call    lock_release
+        mov     eax, ebx
+        EPROC
+
+; (caller holds refresh_lock).  Locals: loc(0) token URL; Bufs: body top 3, response top 6, url top 9
+PROC auth_refresh_locked, 12
         cmp     byte [auth_refresh], 0
         je      .no
         BUFZERO 3
@@ -422,15 +436,19 @@ PROC auth_refresh_blocking, 12
 PROC auth_ensure_fresh, 0
         cmp     byte [auth_refresh], 0
         je      .out
-        mov     rax, [auth_expiry]
+        lea     rcx, [refresh_lock]
+        call    lock_acquire
+        mov     rax, [auth_expiry]              ; (checked under the lock: another thread may just have refreshed)
         test    rax, rax
-        jz      .out
+        jz      .unlock
         mov     rbx, rax
         call    GetTickCount64
         add     rax, 60000
         cmp     rax, rbx
-        jb      .out                            ; more than a minute left
-        call    auth_refresh_blocking
+        jb      .unlock                         ; more than a minute left
+        call    auth_refresh_locked
+.unlock: lea    rcx, [refresh_lock]
+        call    lock_release
 .out:   EPROC
 
 ; ---------------------------------------------------------------- user-visible failures
@@ -812,7 +830,14 @@ PROC h_me, 6
         lea     rdx, [j_id]
         call    jpu
         mov     loc(1), rax
-.named: mov     rcx, [user_name]
+.named: mov     rcx, [user_id]
+        call    mem_free
+        mov     rsi, loc(0)
+        mov     rcx, [rsi+JB_RESP]
+        lea     rdx, [j_id]
+        call    jpu
+        mov     [user_id], rax
+        mov     rcx, [user_name]
         call    mem_free
         mov     rcx, loc(1)
         mov     rdx, -1

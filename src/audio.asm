@@ -63,6 +63,7 @@ ZSTR l_ready, "audio: player ready, device "
 ZSTR l_notready, "audio: player went away"
 ZSTR l_track, "audio: now playing "
 ZSTR l_play_ok, "audio: play request accepted"
+ZSTR l_play_req, "audio: play requested"
 ZSTR l_play_fail, "audio: play request failed, status "
 ZSTR l_sdk_error, "audio: SDK error "
 ZSTR l_hello, "audio: page loaded"
@@ -131,6 +132,7 @@ WSTR w_ta_demo, "Sign in to test audio."
 WSTR w_msg_starting, "Starting audio..."
 WSTR w_msg_playfail, "Spotify could not play that."
 WSTR w_msg_unplayable, "Nothing playable in this list."
+WSTR w_msg_unavailable, "Spotify does not offer that track here."
 WSTR w_msg_autoplay, "The audio helper was blocked from starting playback. Press play again."
 
 section .text
@@ -662,6 +664,8 @@ PROC audio_put_device, 2
 ; rcx = heap JSON body for PUT /me/player/play (ownership passes here)
 PROC audio_start, 2
         mov     loc(0), rcx
+        lea     rcx, [l_play_req]
+        call    log_msg
         cmp     dword [sdk_ready], 0
         je      .wait
         mov     rcx, loc(0)
@@ -830,6 +834,12 @@ PROC real_play_list, 10
         imul    rax, TR_SIZE
         add     rax, [rcx+LS_PTR]
         mov     loc(2), rax
+        test    dword [rax+TR_FLAGS], TF_UNPLAYABLE
+        jz      .playable
+        lea     rcx, [w_msg_unavailable]        ; a greyed-out row: say so instead of failing at Spotify
+        call    ui_toast
+        jmp     .out
+.playable:
         BUFZERO 8
         lea     rax, [lst_detail]
         cmp     rcx, rax
@@ -878,12 +888,14 @@ PROC real_play_list, 10
         imul    rax, TR_SIZE
         mov     rcx, loc(0)
         add     rax, [rcx+LS_PTR]
+        test    dword [rax+TR_FLAGS], TF_UNPLAYABLE
+        jnz     .skipu                          ; region-locked / removed / local tracks cannot go in the list
         mov     rdx, [rax+TR_URI]
         lea     rcx, loc(8)
         mov     r8d, dword loc(4)
         call    body_add_uri
         add     dword loc(4), eax
-        inc     rbx
+.skipu: inc     rbx
         jmp     .u
 .udone: cmp     dword loc(4), 0
         jne     .close

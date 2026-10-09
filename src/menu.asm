@@ -5,8 +5,9 @@
 ; "play" with [current track, queue...] (queue_replay): the current song carries on from the same position, but
 ; playback leaves its album / playlist context.  The menu labels say what they do.
 
-%define MENU_MAX    8
-%define MI_SIZE     16                  ; label* (0), action (8), pad
+%define MENU_MAX    64
+%define MENU_VIS    10                  ; rows shown at once (the wheel scrolls longer menus)
+%define MI_SIZE     16                  ; label* (0), action (8), argument (12)
 %define H_MENU_ITEM 38                  ; arg = item index
 %define H_MENU_BG   39                  ; swallows the click that dismisses the menu
 
@@ -22,12 +23,19 @@
 %define MA_QCLEAR   10
 %define MA_QPLAY    11
 %define MA_CARDOPEN 12
+%define MA_ADDTO    13                  ; open the playlist picker
+%define MA_ADDPL    14                  ; arg = index in lst_playlists
+%define MA_PLREMOVE 15
+%define MA_PLEDIT   16
+%define MA_PLDELETE 17
 
 section .bss
 menu_open:      resd 1
 menu_x:         resd 1
 menu_y:         resd 1
 menu_n:         resd 1
+menu_off:       resd 1                  ; first row shown
+menu_src:       resd 1                  ; list source of the track the menu was opened on
 menu_arg:       resd 1                  ; the hit argument of the item the menu was opened on
 menu_items:     resb MENU_MAX*MI_SIZE
 menu_uri:       resq 1                  ; owned UTF-8 URI of the target
@@ -49,6 +57,13 @@ WSTR mw_qup, "Move up"
 WSTR mw_qdown, "Move down"
 WSTR mw_qclear, "Clear queue"
 WSTR mw_cardopen, "Open"
+WSTR mw_addto, "Add to playlist..."
+WSTR mw_plremove, "Remove from this playlist"
+WSTR mw_pledit, "Edit details"
+WSTR mw_pldelete, "Delete playlist"
+WSTR mw_plunfollow, "Remove from your library"
+WSTR w_pl_none, "You have no playlists you can add to yet."
+WSTR w_pl_demo, "Playlists cannot be changed in demo mode."
 WSTR w_link_done, "Link copied"
 WSTR w_queued, "Added to queue"
 WSTR w_err_queue, "Spotify could not add that to the queue. Start a song first, then try again."
@@ -323,18 +338,22 @@ PROC menu_close, 0
         call    mem_free
         mov     qword [menu_uri], 0
         mov     dword [menu_n], 0
+        mov     dword [menu_off], 0
         EPROC
 
-; rcx = label (static UTF-16), edx = action
+; rcx = label (UTF-16), edx = action, r8d = argument (menu_add0: none)
+menu_add0:
+        xor     r8d, r8d
 menu_add:
         mov     eax, [menu_n]
         cmp     eax, MENU_MAX
         jae     .r
         imul    rax, rax, MI_SIZE
-        lea     r8, [menu_items]
-        add     rax, r8
+        lea     r9, [menu_items]
+        add     rax, r9
         mov     [rax], rcx
         mov     [rax+8], edx
+        mov     [rax+12], r8d
         inc     dword [menu_n]
 .r:     ret
 
@@ -393,13 +412,13 @@ PROC ui_context, 8
         call    menu_set_uri
         lea     rcx, [mw_play]
         mov     edx, MA_PLAY
-        call    menu_add
+        call    menu_add0
         lea     rcx, [mw_qadd]
         mov     edx, MA_QADD
-        call    menu_add
+        call    menu_add0
         lea     rcx, [mw_next]
         mov     edx, MA_PLAYNEXT
-        call    menu_add
+        call    menu_add0
         mov     rcx, loc(2)
         call    like_peek
         lea     rcx, [mw_save]
@@ -407,7 +426,25 @@ PROC ui_context, 8
         jne     .tl
         lea     rcx, [mw_unsave]
 .tl:    mov     edx, MA_LIKE
-        call    menu_add
+        call    menu_add0
+        mov     eax, esi
+        shr     eax, 16
+        mov     [menu_src], eax
+        call    pl_any_writable
+        test    eax, eax
+        jz      .norm
+        lea     rcx, [mw_addto]
+        mov     edx, MA_ADDTO
+        call    menu_add0
+.norm:  cmp     dword [menu_src], SRC_DETAIL
+        jne     .links
+        cmp     dword [det_kind], KIND_PLAYLIST
+        jne     .links
+        test    dword [det_flags], CF_MINE | CF_COLLAB
+        jz      .links
+        lea     rcx, [mw_plremove]
+        mov     edx, MA_PLREMOVE
+        call    menu_add0
         jmp     .links
         ; ---- a row of the queue panel
 .queue: mov     eax, esi
@@ -421,24 +458,24 @@ PROC ui_context, 8
         call    menu_set_uri
         lea     rcx, [mw_play]
         mov     edx, MA_QPLAY
-        call    menu_add
+        call    menu_add0
         lea     rcx, [mw_qremove]
         mov     edx, MA_QREMOVE
-        call    menu_add
+        call    menu_add0
         test    esi, esi
         jz      .nqu
         lea     rcx, [mw_qup]
         mov     edx, MA_QUP
-        call    menu_add
+        call    menu_add0
 .nqu:   lea     eax, [rsi+1]
         cmp     rax, [q_up+LS_COUNT]
         jae     .nqd
         lea     rcx, [mw_qdown]
         mov     edx, MA_QDOWN
-        call    menu_add
+        call    menu_add0
 .nqd:   lea     rcx, [mw_qclear]
         mov     edx, MA_QCLEAR
-        call    menu_add
+        call    menu_add0
         jmp     .links
         ; ---- an album / playlist / artist card
 .card:  mov     ecx, esi
@@ -458,9 +495,24 @@ PROC ui_context, 8
         je      .links
         lea     rcx, [mw_cardopen]
         mov     edx, MA_CARDOPEN
-        call    menu_add
+        call    menu_add0
         cmp     dword [rsi+CD_KIND], KIND_ALBUM
-        jne     .links                          ; (a playlist's own save button would delete it: not offered)
+        je      .albumcard
+        ; a playlist: ours can be edited or deleted, one we only follow can be removed from the library
+        test    dword [rsi+CD_FLAGS], CF_MINE
+        jz      .follow
+        lea     rcx, [mw_pledit]
+        mov     edx, MA_PLEDIT
+        call    menu_add0
+        lea     rcx, [mw_pldelete]
+        mov     edx, MA_PLDELETE
+        call    menu_add0
+        jmp     .links
+.follow: lea    rcx, [mw_plunfollow]
+        mov     edx, MA_PLDELETE
+        call    menu_add0
+        jmp     .links
+.albumcard:
         mov     rcx, loc(2)
         call    like_peek
         lea     rcx, [mw_save_lib]
@@ -468,7 +520,7 @@ PROC ui_context, 8
         jne     .cl
         lea     rcx, [mw_unsave_lib]
 .cl:    mov     edx, MA_LIKE
-        call    menu_add
+        call    menu_add0
         jmp     .links
         ; ---- the playing track (bar cover)
 .np:    cmp     dword [np_valid], 0
@@ -479,10 +531,10 @@ PROC ui_context, 8
         call    menu_set_uri
 .links: lea     rcx, [mw_copy]
         mov     edx, MA_COPY
-        call    menu_add
+        call    menu_add0
         lea     rcx, [mw_open]
         mov     edx, MA_OPEN
-        call    menu_add
+        call    menu_add0
         mov     eax, dword loc(0)
         mov     [menu_x], eax
         mov     eax, dword loc(1)
@@ -491,7 +543,7 @@ PROC ui_context, 8
         mov     eax, 1
 .out:   EPROC
 
-; The menu surface and its rows (an overlay above the page).   Locals: 0 x, 1 y, 2 w, 3 row height, 4 pad, 5 h
+; The menu surface and its rows (an overlay above the page).   Locals: 0 x, 1 y, 2 w, 3 row height, 4 pad, 5 h, 6 rows shown
 PROC paint_menu, 8
         cmp     dword [menu_open], 0
         je      .out
@@ -503,7 +555,16 @@ PROC paint_menu, 8
         S       6
         mov     loc(4), rax
         mov     eax, [menu_n]
-        imul    eax, dword loc(3)
+        cmp     eax, MENU_VIS
+        jbe     .vis
+        mov     eax, MENU_VIS
+.vis:   mov     loc(6), rax
+        mov     ecx, [menu_n]
+        sub     ecx, eax                        ; keep the first row shown within range
+        cmp     [menu_off], ecx
+        jbe     .offok
+        mov     [menu_off], ecx
+.offok: imul    eax, dword loc(3)
         mov     ecx, dword loc(4)
         lea     eax, [rax+rcx*2]
         mov     loc(5), rax
@@ -528,10 +589,12 @@ PROC paint_menu, 8
         mov     r9d, dword loc(5)
         call    gfx_rrect_fill_border
         HIT     dword loc(0), dword loc(1), dword loc(2), dword loc(5), H_SHELL, 0
-        xor     ebx, ebx
-.row:   cmp     ebx, [menu_n]
+        xor     r15d, r15d                      ; row slot on screen
+.row:   cmp     r15d, dword loc(6)
         jae     .out
-        mov     eax, ebx
+        mov     ebx, r15d
+        add     ebx, [menu_off]                 ; item index
+        mov     eax, r15d
         imul    eax, dword loc(3)
         add     eax, dword loc(1)
         add     eax, dword loc(4)
@@ -569,8 +632,62 @@ PROC paint_menu, 8
         mov     outarg(5), rax
         call    gfx_text
         HIT     dword loc(0), r12d, dword loc(2), dword loc(3), H_MENU_ITEM, ebx
-        inc     ebx
+        inc     r15d
         jmp     .row
+.out:   EPROC
+
+; ecx = wheel step in pixels (positive = down): scrolls a long menu (the picker) by whole rows
+menu_wheel:
+        mov     eax, [menu_n]
+        sub     eax, MENU_VIS
+        jle     .r
+        mov     edx, [menu_off]
+        test    ecx, ecx
+        jle     .up
+        inc     edx
+        jmp     .set
+.up:    dec     edx
+.set:   test    edx, edx
+        jns     .hi
+        xor     edx, edx
+.hi:    cmp     edx, eax
+        jle     .st
+        mov     edx, eax
+.st:    mov     [menu_off], edx
+.r:     ret
+
+; -> eax = 1 when we own at least one playlist (or collaborate on one): the picker has something to offer
+pl_any_writable:
+        xor     eax, eax
+        xor     ecx, ecx
+        mov     rdx, [lst_playlists+LS_PTR]
+.l:     cmp     rcx, [lst_playlists+LS_COUNT]
+        jae     .r
+        test    dword [rdx+CD_FLAGS], CF_MINE | CF_COLLAB
+        jnz     .yes
+        add     rdx, CD_SIZE
+        inc     ecx
+        jmp     .l
+.yes:   mov     eax, 1
+.r:     ret
+
+; The playlist picker: replaces the menu rows with the playlists a track may be added to
+PROC menu_picker, 2
+        mov     dword [menu_n], 0
+        mov     dword [menu_off], 0
+        xor     ebx, ebx
+.l:     cmp     rbx, [lst_playlists+LS_COUNT]
+        jae     .out
+        imul    rax, rbx, CD_SIZE
+        add     rax, [lst_playlists+LS_PTR]
+        test    dword [rax+CD_FLAGS], CF_MINE | CF_COLLAB
+        jz      .n
+        mov     rcx, [rax+CD_NAME]
+        mov     edx, MA_ADDPL
+        mov     r8d, ebx
+        call    menu_add
+.n:     inc     ebx
+        jmp     .l
 .out:   EPROC
 
 ; rcx = URI (UTF-8) -> rax = heap "https://open.spotify.com/<type>/<id>" or 0 (local files have no page)
@@ -615,9 +732,15 @@ PROC menu_run, 8
         jae     .out
         imul    rax, rcx, MI_SIZE
         lea     rdx, [menu_items]
+        mov     ecx, [rdx+rax+12]
+        mov     loc(4), rcx                     ; the item's own argument (picker: playlist index)
         mov     eax, [rdx+rax+8]
         mov     loc(0), rax                     ; action
-        mov     rax, [menu_uri]
+        cmp     eax, MA_ADDTO
+        jne     .go
+        call    menu_picker                     ; the menu stays open, now listing playlists
+        jmp     .out
+.go:    mov     rax, [menu_uri]
         mov     qword [menu_uri], 0
         mov     loc(1), rax                     ; URI (now ours)
         mov     eax, [menu_arg]
@@ -649,6 +772,50 @@ PROC menu_run, 8
         je      .qclr
         cmp     eax, MA_CARDOPEN
         je      .cardopen
+        cmp     eax, MA_ADDPL
+        je      .addpl
+        cmp     eax, MA_PLREMOVE
+        je      .plrm
+        cmp     eax, MA_PLEDIT
+        je      .pledit
+        cmp     eax, MA_PLDELETE
+        je      .pldel
+        jmp     .free
+.addpl: cmp     dword [g_demo], 0
+        jne     .demo
+        mov     ecx, SRC_PLAYLISTS
+        mov     edx, dword loc(4)
+        call    card_at
+        test    rax, rax
+        jz      .free
+        mov     rcx, [rax+CD_ID]
+        mov     rdx, loc(1)
+        mov     r8d, PK_ADD
+        call    pl_tracks
+        jmp     .free
+.plrm:  cmp     dword [g_demo], 0
+        jne     .demo
+        mov     rcx, [det_id]
+        mov     rdx, loc(1)
+        mov     r8d, PK_REMOVE
+        call    pl_tracks
+        jmp     .free
+.pledit: mov    ebx, DK_EDIT
+        jmp     .dlg
+.pldel: mov     ebx, DK_DELETE
+.dlg:   mov     ecx, dword loc(2)
+        shr     ecx, 16
+        mov     edx, dword loc(2)
+        movzx   edx, dx
+        call    card_at
+        test    rax, rax
+        jz      .free
+        mov     rdx, rax
+        mov     ecx, ebx
+        call    dlg_open
+        jmp     .free
+.demo:  lea     rcx, [w_pl_demo]
+        call    ui_toast
         jmp     .free
 .play:  mov     ecx, H_TRACK
         mov     edx, dword loc(2)

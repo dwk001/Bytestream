@@ -58,6 +58,9 @@ class State:
         self.library_status = None  # force this status for PUT/DELETE /v1/me/library
         self.queue_added = []     # URIs POSTed to /v1/me/player/queue
         self.queue_status = None
+        self.unplayable = set()   # track URIs reported with is_playable: false in recently played
+        self.playlists = None     # the user's playlists (None = start from the fixture); create/rename/delete change it
+        self.playlist_status = None  # force this status for playlist-changing requests
 
 
 STATE = State()
@@ -97,6 +100,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle(self):
         body = self._body()
+        self._cached_body = body
         u = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(u.query)
         if u.path == "/__log":
@@ -225,6 +229,41 @@ class Handler(BaseHTTPRequestHandler):
             nxt = "http://%s%s?%s" % (self.headers.get("Host", "127.0.0.1"), u.path, urllib.parse.urlencode(qs))
         return {"href": "x", "limit": lim, "offset": off, "total": total, "next": nxt, key: page}
 
+    def _pls(self):
+        if STATE.playlists is None:
+            STATE.playlists = list(fixture("me_playlists.json")["items"])
+        return STATE.playlists
+
+    def _playlist_change(self, u, q, m):
+        body = self._cached_body
+        if not self._authed():
+            self._send(401, {"error": {"status": 401}})
+            return True
+        if STATE.playlist_status:
+            self._send(STATE.playlist_status, {"error": {"status": STATE.playlist_status}})
+            return True
+        path = u.path
+        if path == "/v1/me/playlists":
+            obj = json.loads(body or b"{}")
+            with STATE.lock:
+                pls = self._pls()
+                new = {"id": "newpl%d" % (len(pls) + 1), "uri": "spotify:playlist:newpl%d" % (len(pls) + 1), "name": obj.get("name", ""),
+                       "description": obj.get("description", ""), "public": obj.get("public", True), "collaborative": False,
+                       "images": [], "owner": {"id": "demo", "display_name": "Demo Listener"}, "items": {"total": 0}}
+                pls.insert(0, new)
+            self._send(201, new)
+        elif path.endswith("/items"):
+            self._send(201 if m == "POST" else 200, {"snapshot_id": "snap"})
+        else:
+            ident = path.rsplit("/", 1)[1]
+            obj = json.loads(body or b"{}")
+            with STATE.lock:
+                for x in self._pls():
+                    if x["id"] == ident:
+                        x.update({k: v for k, v in obj.items() if k in ("name", "description", "public")})
+            self._send(200, raw=b"")
+        return True
+
     def _saved(self):
         with STATE.lock:
             if STATE.saved is None:
@@ -234,6 +273,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _library(self, u, q):
         path, m = u.path, self.command
+        if (m in ("PUT", "POST", "DELETE") and re.fullmatch(r"/v1/playlists/[^/]+(/items)?", path)) or (m == "POST" and path == "/v1/me/playlists"):
+            return self._playlist_change(u, q, m)
         if m != "GET" and not path.startswith("/img/") and path not in ("/v1/me/library", "/v1/me/player/queue"):
             return False
         routes = ("/v1/me/playlists", "/v1/me/tracks", "/v1/me/albums", "/v1/me/player/recently-played", "/v1/search",
@@ -265,6 +306,11 @@ class Handler(BaseHTTPRequestHandler):
                 saved.update(uris)
             elif m == "DELETE":
                 saved.difference_update(uris)
+                with STATE.lock:
+                    pls = self._pls()
+                    for u_ in uris:
+                        if u_.startswith("spotify:playlist:"):
+                            pls[:] = [x for x in pls if x["uri"] != u_]
             self._send(200, raw=b"")
         elif path == "/v1/me/player/queue":
             if m == "POST":
@@ -277,13 +323,17 @@ class Handler(BaseHTTPRequestHandler):
                 qd = fixture("queue.json")
                 self._json_out(qd)
         elif path == "/v1/me/playlists":
-            self._json_out(self._paged(u, q, fixture("me_playlists.json")["items"]))
+            self._json_out(self._paged(u, q, list(self._pls())))
         elif path == "/v1/me/tracks":
             self._json_out(self._paged(u, q, fixture("saved_tracks.json")["items"]))
         elif path == "/v1/me/albums":
             self._json_out(self._paged(u, q, fixture("saved_albums.json")["items"]))
         elif path == "/v1/me/player/recently-played":
-            self._json_out({"items": fixture("recent.json")["items"], "next": None})
+            items = fixture("recent.json")["items"]
+            for it in items:
+                if it["track"]["uri"] in STATE.unplayable:
+                    it["track"]["is_playable"] = False
+            self._json_out({"items": items, "next": None})
         elif path == "/v1/search":
             self._json_out(fixture("search.json"))
         else:

@@ -134,6 +134,8 @@ edit_ph:        resd 1
 edit_syncing:   resd 1                  ; set while the program (not the user) fills an input
 edit_client:    resq 1
 edit_port:      resq 1
+edit_dn:        resq 1                  ; dialog: playlist name
+edit_dd:        resq 1                  ; dialog: description
 banner_text:    resq 1                  ; UTF-16, owned (0 = none)
 banner_label:   resq 1                  ; UTF-16, owned: action button label (0 = none)
 banner_code:    resd 1
@@ -142,6 +144,7 @@ redir_w:        resq 1                  ; UTF-16 copy of the redirect URI for di
 ver_w:          resq 1                  ; UTF-16 "Version 0.1 (build ...)" for About
 search_dirty:   resd 1
 user_name:      resq 1                  ; UTF-16, owned
+user_id:        resq 1                  ; Spotify user id (UTF-8, owned): decides which playlists are ours to change
 logfont:        resb 96
 
 section .text

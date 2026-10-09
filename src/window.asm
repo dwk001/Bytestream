@@ -11,6 +11,8 @@ extern GdipCreateFromHDC, CreateFileW, CloseHandle, WriteFile
 %define ID_EDIT_SEARCH   101
 %define ID_EDIT_CLIENT   102
 %define ID_EDIT_PORT     103
+%define ID_EDIT_DN       104
+%define ID_EDIT_DD       105
 %define TIMER_TICK       1
 %define TIMER_SEARCH     2
 %define EN_CHANGE        0x0300
@@ -46,8 +48,8 @@ paints_bar:     resd 1
 rc_buf:         resb 16
 tme_buf:        resb 24
 bmi_buf:        resb 48
-edit_last:      resd 12                 ; last rectangle given to each EDIT (x y w h) x3
-edit_vis:       resd 3
+edit_last:      resd 20                 ; last rectangle given to each EDIT (x y w h) x5
+edit_vis:       resd 5
 edit_text:      resw 200
 search_buf:     resw 260
 shot_hdr:       resb 64
@@ -193,6 +195,7 @@ PROC render_frame, 2
         call    paint_banner
         call    paint_fullscreen
         call    paint_menu
+        call    paint_dialog
         call    paint_toast
         mov     dword [frame_valid], 1
         call    like_flush                      ; hearts painted this frame that need an answer go out as one request
@@ -200,7 +203,10 @@ PROC render_frame, 2
 
 ; Moves / shows / hides the native EDIT controls to match what the current page asked for.
 PROC sync_edits, 0
-        ; search box
+        cmp     dword [dlg_kind], 0
+        je      .nodlg
+        and     dword [edit_want], 0x18         ; a dialog is open: only its own fields may show
+.nodlg: ; search box
         mov     eax, [edit_want]
         and     eax, 1
         mov     edx, [edit_sx]
@@ -236,9 +242,36 @@ PROC sync_edits, 0
         lea     rsi, [edit_last+32]
         lea     rdi, [edit_vis+8]
         call    place_edit
+        mov     eax, [edit_want]
+        shr     eax, 3
+        and     eax, 1
+        mov     edx, [edit_dnx]
+        mov     r8d, [edit_dnx+4]
+        mov     r9d, [edit_dnx+8]
+        mov     ecx, [edit_dnx+12]
+        mov     rbx, [edit_dn]
+        lea     rsi, [edit_last+48]
+        lea     rdi, [edit_vis+12]
+        call    place_edit
+        mov     eax, [edit_want]
+        shr     eax, 4
+        and     eax, 1
+        mov     edx, [edit_ddx]
+        mov     r8d, [edit_ddx+4]
+        mov     r9d, [edit_ddx+8]
+        mov     ecx, [edit_ddx+12]
+        mov     rbx, [edit_dd]
+        lea     rsi, [edit_last+64]
+        lea     rdi, [edit_vis+16]
+        call    place_edit
         cmp     dword [focus_req], 0
         je      .out
-        cmp     dword [focus_req], 1
+        cmp     dword [focus_req], 4
+        jne     .f1
+        mov     rcx, [edit_dn]
+        call    SetFocus
+        jmp     .done
+.f1:    cmp     dword [focus_req], 1
         jne     .cl
         mov     rcx, [edit_search]
         call    SetFocus
@@ -364,6 +397,20 @@ PROC ui_make_fonts, 2
         mov     r8, [edit_font]
         mov     r9d, 1
         call    SendMessageW
+        mov     rcx, [edit_dn]
+        test    rcx, rcx
+        jz      .out
+        mov     edx, WM_SETFONT
+        mov     r8, [edit_font]
+        mov     r9d, 1
+        call    SendMessageW
+        mov     rcx, [edit_dd]
+        test    rcx, rcx
+        jz      .out
+        mov     edx, WM_SETFONT
+        mov     r8, [edit_font]
+        mov     r9d, 1
+        call    SendMessageW
 .out:   EPROC
 
 ; Rebuilds the colour-dependent GDI objects after a theme change.
@@ -379,6 +426,8 @@ PROC ui_theme_changed, 0
         mov     [edit_brush], rax
         mov     dword [edit_vis], 0
         mov     dword [edit_vis+4], 0
+        mov     dword [edit_vis+12], 0
+        mov     dword [edit_vis+16], 0
         mov     rcx, [hwnd]
         test    rcx, rcx
         jz      .out
@@ -413,6 +462,8 @@ PROC wndproc, 12
         je      .cursor
         cmp     edx, WM_KEYDOWN
         je      .key
+        cmp     edx, 0x0319                     ; WM_APPCOMMAND: the keyboard's media keys
+        je      .appcmd
         cmp     edx, WM_TIMER
         je      .timer
         cmp     edx, WM_SIZE
@@ -461,6 +512,8 @@ PROC wndproc, 12
         cmp     dword [queue_open], 0
         jne     .fullpaint
         cmp     dword [menu_open], 0
+        jne     .fullpaint
+        cmp     dword [dlg_kind], 0
         jne     .fullpaint
         mov     eax, [ps_buf+16]                ; PAINTSTRUCT.rcPaint.top
         cmp     eax, [lay_bar_y]
@@ -632,6 +685,32 @@ PROC wndproc, 12
         xor     r8d, r8d
         call    InvalidateRect
         jmp     .zero
+
+.appcmd: mov    rax, loc(3)
+        shr     rax, 16
+        and     eax, 0x0FFF                     ; GET_APPCOMMAND_LPARAM
+        mov     ecx, H_PLAY
+        cmp     eax, 14                         ; APPCOMMAND_MEDIA_PLAY_PAUSE
+        je      .appact
+        cmp     eax, 46                         ; APPCOMMAND_MEDIA_PLAY
+        je      .appact
+        cmp     eax, 47                         ; APPCOMMAND_MEDIA_PAUSE
+        je      .appact
+        mov     ecx, H_NEXT
+        cmp     eax, 11                         ; APPCOMMAND_MEDIA_NEXTTRACK
+        je      .appact
+        mov     ecx, H_PREV
+        cmp     eax, 12                         ; APPCOMMAND_MEDIA_PREVIOUSTRACK
+        je      .appact
+        jmp     .def
+.appact: xor    edx, edx
+        call    ui_activate
+        mov     rcx, loc(0)
+        xor     edx, edx
+        xor     r8d, r8d
+        call    InvalidateRect
+        mov     eax, 1                          ; handled
+        jmp     .out
 
 .timer: mov     rax, loc(2)
         cmp     eax, TIMER_SEARCH

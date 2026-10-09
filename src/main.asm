@@ -26,6 +26,8 @@ text_begin:
 %include "ui_widgets.asm"
 %include "library.asm"
 %include "like.asm"
+%include "playlist.asm"
+%include "dialog.asm"
 %include "menu.asm"
 %include "ui_chrome.asm"
 %include "ui_overlays.asm"
@@ -43,6 +45,7 @@ cli_demo:       resd 1
 cli_page:       resd 1                  ; -1 = default
 cli_theme:      resd 1
 cli_w:          resd 1
+cli_size_set:   resd 1                  ; --size given: do not restore the saved window size
 cli_h:          resd 1
 cli_scale:      resd 1                  ; percent, 0 = system DPI
 cli_play:       resd 1
@@ -78,6 +81,8 @@ cli_act_arg:    resd 16
 dump_buf:       resb 4096
 cli_run_ms:     resd 1                  ; --run-ms N: keep running N ms after the scripted actions, then dump and exit
 run_t0:         resq 1
+cli_dlg_name:    resq 1                  ; --dlg-name / --dlg-desc: text that appears in the dialog fields when it opens (tests)
+cli_dlg_desc:    resq 1
 cli_hold:       resd 1                  ; --hold: with --dump, keep running until the player page posts "quit"
 dump_tmp:       resd 1
 
@@ -107,6 +112,8 @@ WSTR a_imgb, "--img-budget"
 WSTR a_nobrowser, "--no-browser"
 WSTR a_hold, "--hold"
 WSTR a_runms, "--run-ms"
+WSTR a_dlgname, "--dlg-name"
+WSTR a_dlgdesc, "--dlg-desc"
 WSTR a_netget, "--net-get"
 WSTR a_tclient, "--type-client"
 WSTR a_tport, "--type-port"
@@ -160,6 +167,8 @@ ZSTR d_device, "device="
 ZSTR d_pos, "position_ms="
 ZSTR d_dur, "duration_ms="
 ZSTR d_sdk, "sdk_ready="
+ZSTR d_dlg, "dialog="
+ZSTR d_dlgpub, "dialog_public="
 ZSTR d_menu, "menu_open="
 ZSTR d_menun, "menu_n="
 ZSTR d_q0, "queue_first="
@@ -363,6 +372,7 @@ PROC parse_cli, 4
         call    w_pair
         mov     [cli_w], eax
         mov     [cli_h], edx
+        mov     dword [cli_size_set], 1
         inc     qword loc(2)
         jmp     .next
 .b2:    mov     rcx, rbx
@@ -532,10 +542,26 @@ PROC parse_cli, 4
         lea     rdx, [a_runms]
         call    arg_is
         test    eax, eax
-        jz      .b17
+        jz      .b16e
         mov     rcx, rsi
         call    w_atoi
         mov     [cli_run_ms], eax
+        inc     qword loc(2)
+        jmp     .next
+.b16e:  mov     rcx, rbx
+        lea     rdx, [a_dlgname]
+        call    arg_is
+        test    eax, eax
+        jz      .b16f
+        mov     [cli_dlg_name], rsi
+        inc     qword loc(2)
+        jmp     .next
+.b16f:  mov     rcx, rbx
+        lea     rdx, [a_dlgdesc]
+        call    arg_is
+        test    eax, eax
+        jz      .b17
+        mov     [cli_dlg_desc], rsi
         inc     qword loc(2)
         jmp     .next
 .b17:   mov     rcx, rbx
@@ -794,6 +820,8 @@ PROC run_act_at, 2
         and     r12d, 0xFFFF
         lea     rax, [cli_act_arg]
         mov     r13d, [rax+rcx*4]
+        mov     ecx, 4000
+        call    net_wait_idle                   ; let requests started by earlier actions finish (a page's tracks, say)
         mov     rcx, [hwnd]
         call    UpdateWindow                    ; paint what arrived since the last frame, so the hit list is current
         xor     esi, esi
@@ -984,6 +1012,8 @@ PROC dump_state, 4
         DUMPNUM d_pos, dword [np_pos]
         DUMPNUM d_dur, dword [np_dur]
         DUMPNUM d_sdk, dword [sdk_ready]
+        DUMPNUM d_dlg, dword [dlg_kind]
+        DUMPNUM d_dlgpub, dword [dlg_public]
         DUMPNUM d_menu, dword [menu_open]
         DUMPNUM d_menun, dword [menu_n]
         DUMPNUM d_pfull, dword [paints_full]
@@ -1178,7 +1208,15 @@ PROC start, 8
 .gui:   call    SetProcessDPIAware
         mov     rcx, [cli_data_dir]
         call    settings_init
-        call    single_instance_check
+        cmp     dword [cli_size_set], 0
+        jne     .nosize
+        cmp     dword [set_win_w], 0
+        je      .nosize
+        mov     eax, [set_win_w]                ; the size the window had last time
+        mov     [cli_w], eax
+        mov     eax, [set_win_h]
+        mov     [cli_h], eax
+.nosize: call   single_instance_check
         lea     rcx, [data_dir]
         call    log_init
         call    version_string_init
@@ -1241,6 +1279,12 @@ PROC start, 8
         mov     ecx, ID_EDIT_PORT
         call    make_edit
         mov     [edit_port], rax
+        mov     ecx, ID_EDIT_DN
+        call    make_edit
+        mov     [edit_dn], rax
+        mov     ecx, ID_EDIT_DD
+        call    make_edit
+        mov     [edit_dd], rax
         call    edit_fill_from_settings
         mov     rcx, [edit_search]
         mov     edx, 0x1501                     ; EM_SETCUEBANNER

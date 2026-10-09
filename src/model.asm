@@ -18,6 +18,9 @@
 %define TR_IMG_S  32
 %define TR_IMG_L  40
 %define TR_DUR    48
+%define TR_FLAGS  52                    ; bit 0 not playable (region / removed), bit 1 local file
+%define TF_UNPLAYABLE 1
+%define TF_LOCAL  2
 %define TR_SIZE   56
 
 %define CD_NAME   0
@@ -28,7 +31,12 @@
 %define CD_IMG_L  40
 %define CD_KIND   48
 %define CD_COUNT  52
-%define CD_SIZE   56
+%define CD_OWNER  56                    ; playlists: owner id (UTF-8, owned)
+%define CD_FLAGS  64                    ; bit 0 collaborative, bit 1 owned by the signed-in user, bit 2 public
+%define CD_SIZE   72
+%define CF_COLLAB 1
+%define CF_MINE   2
+%define CF_PUBLIC 4
 
 %define LS_PTR    0
 %define LS_COUNT  8
@@ -56,6 +64,9 @@ ZSTR k_album_name, "album.name"
 ZSTR k_album_images, "album.images"
 ZSTR k_images, "images"
 ZSTR k_owner_name, "owner.display_name"
+ZSTR k_owner_id, "owner.id"
+ZSTR k_collab, "collaborative"
+ZSTR k_public, "public"
 ZSTR k_items_total, "items.total"
 ZSTR k_tracks_total, "tracks.total"
 ZSTR k_total_tracks, "total_tracks"
@@ -63,6 +74,8 @@ ZSTR k_by, "By "
 ZSTR k_artist_lbl, "Artist"
 ZSTR k_comma, ", "
 ZSTR k_empty, ""
+ZSTR k_is_playable, "is_playable"
+ZSTR k_is_local, "is_local"
 
 section .text
 
@@ -154,6 +167,8 @@ PROC cards_free, 0
         mov     rcx, [rsi+CD_IMG_M]
         call    mem_free
         mov     rcx, [rsi+CD_IMG_L]
+        call    mem_free
+        mov     rcx, [rsi+CD_OWNER]
         call    mem_free
         inc     r12
         jmp     .l
@@ -290,6 +305,27 @@ PROC parse_track, 3
         call    jpi
         mov     rdx, loc(1)
         mov     [rdx+TR_DUR], eax
+        ; availability: "is_playable": false marks a track Spotify will refuse; a local file cannot be played here
+        mov     qword loc(3), 0                 ; flags (kept in memory: calls clobber the scratch registers)
+        mov     rcx, loc(0)
+        lea     rdx, [k_is_playable]
+        call    json_path
+        test    rax, rax
+        jz      .pl1
+        cmp     byte [rax], 'f'
+        jne     .pl1
+        mov     dword loc(3), TF_UNPLAYABLE
+.pl1:   mov     rcx, loc(0)
+        lea     rdx, [k_is_local]
+        call    json_path
+        test    rax, rax
+        jz      .pl2
+        cmp     byte [rax], 't'
+        jne     .pl2
+        or      dword loc(3), TF_LOCAL | TF_UNPLAYABLE
+.pl2:   mov     rdx, loc(1)
+        mov     eax, dword loc(3)
+        mov     [rdx+TR_FLAGS], eax
         mov     rcx, loc(0)
         lea     rdx, [k_artists]
         call    json_get
@@ -396,6 +432,36 @@ PROC parse_card, 8
         call    json_int
         mov     rdx, loc(1)
         mov     [rdx+CD_COUNT], eax
+        ; who owns it, and may the signed-in user change it?
+        mov     rcx, loc(0)
+        lea     rdx, [k_owner_id]
+        call    jpu
+        mov     rdx, loc(1)
+        mov     [rdx+CD_OWNER], rax
+        mov     rcx, loc(0)
+        lea     rdx, [k_collab]
+        call    json_path
+        mov     rcx, rax
+        call    json_bool
+        mov     r8d, eax                        ; bit 0
+        mov     rcx, loc(0)
+        lea     rdx, [k_public]
+        call    json_path
+        mov     rcx, rax
+        call    json_bool
+        shl     eax, 2
+        or      r8d, eax
+        mov     rdx, loc(1)
+        mov     [rdx+CD_FLAGS], r8d
+        mov     rcx, [rdx+CD_OWNER]
+        mov     rdx, [user_id]
+        test    rdx, rdx
+        jz      .done
+        call    u8_eq
+        test    eax, eax
+        jz      .done
+        mov     rdx, loc(1)
+        or      dword [rdx+CD_FLAGS], CF_MINE
         jmp     .done
 .al:    mov     rcx, loc(0)
         lea     rdx, [k_artists]

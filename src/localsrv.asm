@@ -973,6 +973,7 @@ PROC srv_conn, 12
         call    srv_check_secret
         test    eax, eax
         jz      .rej_secret
+        call    auth_ensure_fresh               ; the SDK may ask long after the last API call: never hand out an expired token
         BUFZERO 11
         lea     rcx, [tok_lock]
         call    lock_acquire

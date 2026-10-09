@@ -552,9 +552,13 @@ PROC draw_tracks, 16
         mov     rcx, [rsi+TR_IMG_S]
         mov     qword outarg(5), 6
         call    draw_cover
-        ; title / artist
+        ; title / artist (an unplayable track is shown muted)
         SETFONT F_BODY
         SETCOL  T_FG
+        test    dword [rsi+TR_FLAGS], TF_UNPLAYABLE
+        jz      .tcol
+        SETCOL  T_MUTED_FG
+.tcol:
         mov     eax, dword dt_rowh
         shr     eax, 1
         S       19

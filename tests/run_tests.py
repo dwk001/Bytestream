@@ -22,9 +22,11 @@ H_SIGNIN, H_DEMO = 16, 24
 H_COPY_URI, H_OPEN_DASH, H_BANNER_X = 28, 29, 30
 H_OPEN_LOG, H_COPY_DIAG, H_CANCEL_SIGNIN = 32, 33, 34
 H_TEST_AUDIO, H_LIKE, H_MENU_ITEM, H_MENU_BG = 36, 37, 38, 39
+H_NEW_PL, H_DET_EDIT, H_DET_DELETE, H_DLG_BG, H_DLG_OK, H_DLG_CANCEL, H_DLG_PUBLIC = 40, 41, 42, 43, 44, 45, 46
 H_QUEUE_ROW = 22
 H_SIGNOUT = 18
 SRC_RECENT, SRC_LIKED, SRC_PLAYLISTS, SRC_ALBUMS = 1, 2, 5, 6
+SRC_DETAIL = 4
 PAGE_HOME, PAGE_SEARCH, PAGE_LIBRARY, PAGE_DETAIL, PAGE_SETTINGS, PAGE_LOGIN = range(6)
 
 
@@ -376,8 +378,8 @@ def main():
             return chk
 
         flow("theme: dark background is #121212", ["--theme", "0"], {"theme": 0}, shot=True, extra_check=bg((18, 18, 18)))
-        flow("theme: midnight background", ["--theme", "1"], {"theme": 1}, shot=True, extra_check=bg((7, 17, 31)))
-        flow("theme: light background", ["--theme", "2"], {"theme": 2}, shot=True, extra_check=bg((250, 250, 250)))
+        flow("theme: midnight background", ["--theme", "1"], {"theme": 1}, shot=True, extra_check=bg((11, 18, 32)))
+        flow("theme: light background", ["--theme", "2"], {"theme": 2}, shot=True, extra_check=bg((255, 255, 255)))
         flow("settings page switches the theme", ["--act", f"{H_NAV},{PAGE_SETTINGS}", "--act", f"{H_THEME},1"], {"theme": 1})
 
         def not_blank(path):
@@ -704,9 +706,10 @@ def main():
         logtxt = open(os.path.join(d, "bytestream.log"), encoding="utf-8").read()
         check("audio: no Edge or Chrome found" in logtxt, "audio: the missing browser is logged")
 
-        # the full conversation with a fake page
+        # the full conversation with a fake page (its tokens last 45 s, so the player page's token fetch must refresh)
         S.log.clear()
         S.play_reply = None
+        S.expires_in = 45
         app = spawn(["--dump", "--hold", "--no-browser", "--wait-auth", "--api-base", base, "--auth-base", base,
                      "--type-client", "client-abc", "--type-port", str(sport), "--size", "1280x1300",
                      "--edge-path", "x:\\fake\\msedge.exe",
@@ -721,9 +724,12 @@ def main():
                 page = FakePage(line[len("edge-launch:"):])
                 status, body = page.get("/player")
                 check(status == 200, "audio: the helper page loads with the launch secret", str(status))
+                n_tok = len([e for e in S.log if e["path"] == "/api/token"])
                 status, body = page.get("/bridge/token")
                 tok = json.loads(body).get("token", "") if status == 200 else ""
                 check(status == 200 and tok.startswith("access-"), "audio: the page can fetch the access token", str((status, body[:80])))
+                check(len([e for e in S.log if e["path"] == "/api/token"]) > n_tok,
+                      "audio: a token about to expire is refreshed when the page asks for it (the SDK may ask long after the last API call)")
                 status, first = page.open_commands()
                 check(status == 200 and first.startswith(": connected"), "audio: the command stream opens", first)
                 check(page.post({"type": "hello"}) == 204, "audio: hello is accepted")
@@ -789,6 +795,7 @@ def main():
         check("audio: player ready, device dev-test-1" in logtxt and "audio: now playing Test Track" in logtxt
               and "audio: play request failed, status 403" in logtxt, "audio: the conversation is in the log", logtxt[-600:])
         check("access-" not in logtxt, "audio: no access token in the log")
+        S.expires_in = 3600
         shutil.rmtree(d, ignore_errors=True)
 
         # the page script itself, in a real browser engine against a mocked SDK
@@ -932,16 +939,16 @@ def main():
         # ---- the right-click menu and queue editing (demo data)
         row0 = arg(SRC_LIKED, 0)
         rc, out, st, _ = run(["--demo", "--dump", "--page", str(PAGE_LIBRARY), "--tab", "1", "--ctx", f"{H_TRACK},{row0}"])
-        check(st.get("menu_open") == "1" and st.get("menu_n") == "6", "menu: a right click on a track row opens a six-item menu", str(st))
+        check(st.get("menu_open") == "1" and st.get("menu_n") == "7", "menu: a right click on a track row opens the seven-item menu", str(st))
         rc, out, st, _ = run(["--demo", "--dump", "--page", str(PAGE_LIBRARY), "--tab", "1", "--ctx", f"{H_TRACK},{row0}", "--act", f"{H_MENU_BG},0"])
         check(st.get("menu_open") == "0", "menu: a click outside dismisses it", str(st))
         rc, out, st, _ = run(["--demo", "--dump", "--page", str(PAGE_HOME), "--ctx", f"{H_TRACK},{arg(SRC_RECENT, 0)}", "--act", f"{H_MENU_ITEM},1"])
         check(st.get("menu_open") == "0" and st.get("queued") == "1", "menu: Add to queue appends the track to the queue", str(st))
         rc, out, st, _ = run(["--demo", "--dump", "--page", str(PAGE_HOME), "--ctx", f"{H_TRACK},{arg(SRC_RECENT, 3)}", "--act", f"{H_MENU_ITEM},2"])
         check(st.get("queued") == "1" and st.get("queue_first"), "menu: Play next puts the track at the front", str(st))
-        rc, out, st, _ = run(["--demo", "--dump", "--no-browser", "--page", str(PAGE_HOME), "--ctx", f"{H_TRACK},{arg(SRC_RECENT, 0)}", "--act", f"{H_MENU_ITEM},4"])
-        check(any(l.startswith("clipboard:https://open.spotify.com/track/") for l in out.splitlines()), "menu: Copy link copies the open.spotify.com address", out[-300:])
         rc, out, st, _ = run(["--demo", "--dump", "--no-browser", "--page", str(PAGE_HOME), "--ctx", f"{H_TRACK},{arg(SRC_RECENT, 0)}", "--act", f"{H_MENU_ITEM},5"])
+        check(any(l.startswith("clipboard:https://open.spotify.com/track/") for l in out.splitlines()), "menu: Copy link copies the open.spotify.com address", out[-300:])
+        rc, out, st, _ = run(["--demo", "--dump", "--no-browser", "--page", str(PAGE_HOME), "--ctx", f"{H_TRACK},{arg(SRC_RECENT, 0)}", "--act", f"{H_MENU_ITEM},6"])
         check(any(l.startswith("open:https://open.spotify.com/track/") for l in out.splitlines()), "menu: Open in Spotify opens the web page for the track", out[-300:])
         rc, out, st0, _ = run(["--demo", "--dump", "--play", "--queue"])
         nq = int(st0.get("queued", "0"))
@@ -959,7 +966,7 @@ def main():
         rc, out, st, _ = run(["--demo", "--dump", "--page", str(PAGE_LIBRARY), "--tab", "2", "--ctx", f"{H_CARD},{arg(SRC_ALBUMS, 0)}"])
         check(st.get("menu_open") == "1" and st.get("menu_n") == "4", "menu: an album card offers open / save / copy / open in Spotify", str(st))
         rc, out, st, _ = run(["--demo", "--dump", "--page", str(PAGE_LIBRARY), "--tab", "0", "--ctx", f"{H_CARD},{arg(SRC_PLAYLISTS, 0)}"])
-        check(st.get("menu_n") == "3", "menu: a playlist card has no save / unsave item (that would delete the playlist)", str(st))
+        check(st.get("menu_n") == "5", "menu: a playlist card offers edit / delete instead of save (a heart would delete it)", str(st))
 
         S.reset()
         d = tempfile.mkdtemp(prefix="bs-data-")
@@ -1055,6 +1062,132 @@ def main():
                 k, v = l.split("=", 1)
                 stq[k.strip()] = v.strip()
         check(int(stq.get("queued", "0")) >= 12, "queue: the panel shows the queue Spotify reported", str(stq.get("queued")))
+        shutil.rmtree(d, ignore_errors=True)
+
+
+    # ---- milestone 6: playlist management (dialogs, create / rename / delete, add / remove tracks)
+    if ONLY in (None, 'm6'):
+        S = fake_spotify.STATE
+        rc, out, st, _ = run(["--demo", "--dump", "--act", f"{H_NEW_PL},0"])
+        check(st.get("dialog") == "1", "dialog: the + button opens the New playlist dialog", str(st))
+        rc, out, st, _ = run(["--demo", "--dump", "--act", f"{H_NEW_PL},0", "--act", f"{H_DLG_CANCEL},0"])
+        check(st.get("dialog") == "0", "dialog: Cancel closes it", str(st))
+        rc, out, st, _ = run(["--demo", "--dump", "--act", f"{H_NEW_PL},0", "--act", f"{H_DLG_PUBLIC},0"])
+        check(st.get("dialog_public") == "1", "dialog: the Public / Private toggle flips", str(st))
+        rc, out, st, _ = run(["--demo", "--dump", "--act", f"{H_NEW_PL},0", "--act", f"{H_DLG_BG},0"])
+        check(st.get("dialog") == "1", "dialog: it is modal - a click outside the panel does nothing", str(st))
+        rc, out, st, _ = run(["--demo", "--dump", "--detail", "0", "--act", f"{H_DET_EDIT},0"])
+        check(st.get("dialog") == "2", "dialog: Edit on our own playlist opens the edit dialog", str(st))
+        rc, out, st, _ = run(["--demo", "--dump", "--detail", "0", "--act", f"{H_DET_DELETE},0"])
+        check(st.get("dialog") == "3", "dialog: Delete asks for confirmation", str(st))
+        rc, out, st, _ = run(["--demo", "--dump", "--detail", "0", "--ctx", f"{H_TRACK},{arg(SRC_DETAIL, 1)}"])
+        check(st.get("menu_n") == "7" or st.get("menu_n") == "8", "menu: a track of our own playlist also offers Add to playlist and Remove from this playlist", str(st))
+
+        S.reset()
+        d = tempfile.mkdtemp(prefix="bs-data-")
+        sport = free_port()
+        st, _, _ = signin(base, d, port=sport)
+
+        def live6(extra, reset_state=True):
+            if reset_state:
+                S.playlists = None
+                S.playlist_status = None
+            S.log.clear()
+            st, _, lines = signin(base, d, port=sport, act_signin=False, extra=["--size", "1280x1300"] + extra)
+            reqs = [e for e in S.log if e["method"] != "GET" and e["path"].startswith("/v1/")]
+            return st, reqs
+
+        st, reqs = live6([])
+        check(st.get("playlists") == "10", "playlists: ten to start with", str(st))
+        st, reqs = live6(["--act", f"{H_NEW_PL},0", "--dlg-name", 'Road "trip" \\ caf\u00e9', "--dlg-desc", "for the car", "--act", f"{H_DLG_PUBLIC},0", "--act", f"{H_DLG_OK},0"])
+        posts = [e for e in reqs if e["method"] == "POST" and e["path"] == "/v1/me/playlists"]
+        check(len(posts) == 1, "create: POST /me/playlists", str([(e['method'], e['path']) for e in reqs]))
+        if posts:
+            b = json.loads(posts[0]["body"])
+            check(b == {"name": 'Road "trip" \\ caf\u00e9', "description": "for the car", "public": True},
+                  "create: name, description and public arrive intact (quotes, backslash and accents escaped)", str(b))
+            check(posts[0]["headers"].get("Content-Type") == "application/json", "create: JSON content type")
+        check(st.get("playlists") == "11" and st.get("dialog") == "0", "create: the new playlist appears and the dialog closes", str(st))
+        st, reqs = live6(["--act", f"{H_NEW_PL},0", "--dlg-name", "   ", "--act", f"{H_DLG_OK},0"])
+        check(not [e for e in reqs if e["method"] == "POST"] and st.get("dialog") == "1", "create: a blank name is refused and the dialog stays open", str(st))
+
+        st, reqs = live6(["--act", f"{H_CARD},{arg(SRC_PLAYLISTS, 0)}", "--act", f"{H_DET_EDIT},0", "--dlg-name", "Renamed mix", "--act", f"{H_DLG_OK},0"])
+        puts = [e for e in reqs if e["method"] == "PUT" and e["path"] == "/v1/playlists/pl000"]
+        check(len(puts) == 1 and json.loads(puts[0]["body"]) == {"name": "Renamed mix", "public": False},
+              "edit: PUT /playlists/{id} with the new name (an empty description is left alone)", str([(e['method'], e['path'], e['body']) for e in reqs]))
+        check(st.get("detail") == "Renamed mix", "edit: the open page shows the new name at once", str(st.get("detail")))
+
+        st, reqs = live6(["--act", f"{H_CARD},{arg(SRC_PLAYLISTS, 0)}", "--act", f"{H_DET_DELETE},0", "--act", f"{H_DLG_OK},0"])
+        dels = [e for e in reqs if e["method"] == "DELETE"]
+        check(len(dels) == 1 and dels[0]["path"] == "/v1/me/library?uris=spotify%3Aplaylist%3Apl000",
+              "delete: DELETE /me/library with the playlist URI", str([(e['method'], e['path']) for e in reqs]))
+        check(st.get("playlists") == "9" and st.get("page") == str(PAGE_LIBRARY), "delete: it disappears and its page closes", str(st))
+        st, reqs = live6(["--act", f"{H_CARD},{arg(SRC_PLAYLISTS, 0)}", "--act", f"{H_DET_DELETE},0", "--act", f"{H_DLG_CANCEL},0"])
+        check(not [e for e in reqs if e["method"] == "DELETE"] and st.get("playlists") == "10", "delete: Cancel sends nothing", str(st))
+
+        # adding a track from a row's menu: the picker lists the playlists we own
+        st, reqs = live6(["--page", str(PAGE_HOME), "--ctx", f"{H_TRACK},{arg(SRC_RECENT, 0)}", "--act", f"{H_MENU_ITEM},4"])
+        check(st.get("menu_open") == "1" and st.get("menu_n") == "10", "picker: Add to playlist lists our ten playlists", str(st))
+        recent = fake_spotify.fixture("recent.json")["items"]
+        st, reqs = live6(["--page", str(PAGE_HOME), "--ctx", f"{H_TRACK},{arg(SRC_RECENT, 0)}", "--act", f"{H_MENU_ITEM},4", "--act", f"{H_MENU_ITEM},2"])
+        posts = [e for e in reqs if e["method"] == "POST" and e["path"].endswith("/items")]
+        check(len(posts) == 1 and posts[0]["path"] == "/v1/playlists/pl002/items" and json.loads(posts[0]["body"]) == {"uris": [recent[0]["track"]["uri"]]},
+              "picker: choosing a playlist POSTs the track to /playlists/{id}/items", str([(e['method'], e['path'], e['body']) for e in reqs]))
+        S.playlist_status = 403
+        st, reqs = live6(["--page", str(PAGE_HOME), "--ctx", f"{H_TRACK},{arg(SRC_RECENT, 0)}", "--act", f"{H_MENU_ITEM},4", "--act", f"{H_MENU_ITEM},2"], reset_state=False)
+        check(len([e for e in reqs if e["method"] == "POST"]) == 1 and st.get("menu_open") == "0",
+              "picker: a refusal (403) is reported without breaking anything", str(st))
+        S.playlist_status = None
+
+        # removing a track of the open own playlist
+        items = fake_spotify.fixture("playlist_items.json")["items"]
+        st, reqs = live6(["--act", f"{H_CARD},{arg(SRC_PLAYLISTS, 0)}", "--ctx", f"{H_TRACK},{arg(SRC_DETAIL, 1)}", "--act", f"{H_MENU_ITEM},5"])
+        dels = [e for e in reqs if e["method"] == "DELETE" and e["path"] == "/v1/playlists/pl000/items"]
+        check(len(dels) == 1 and json.loads(dels[0]["body"]) == {"items": [{"uri": items[1]["item"]["uri"]}]},
+              "remove: DELETE /playlists/{id}/items with the track URI", str([(e['method'], e['path'], e['body']) for e in reqs]))
+        check(st.get("detail_tracks") == "24", "remove: the page is reloaded afterwards", str(st))
+        # playlist card menu
+        st, reqs = live6(["--page", str(PAGE_LIBRARY), "--ctx", f"{H_CARD},{arg(SRC_PLAYLISTS, 0)}"])
+        check(st.get("menu_n") == "5", "menu: our playlist card offers open / edit / delete / copy / open in Spotify", str(st))
+        shutil.rmtree(d, ignore_errors=True)
+
+
+    # ---- milestone 7: polish
+    if ONLY in (None, 'm7'):
+        S = fake_spotify.STATE
+        # unplayable tracks are muted and refused locally instead of failing at Spotify
+        S.reset()
+        d = tempfile.mkdtemp(prefix="bs-data-")
+        sport = free_port()
+        st, _, _ = signin(base, d, port=sport)
+        recent = fake_spotify.fixture("recent.json")["items"]
+        S.unplayable = {recent[0]["track"]["uri"]}
+        S.log.clear()
+        st, _, lines = signin(base, d, port=sport, act_signin=False, extra=["--size", "1280x1300", "--edge-path", "x:\\fake\\msedge.exe",
+                                                                           "--act", f"{H_TRACK},{arg(SRC_RECENT, 0)}"])
+        check(not any(l.startswith("edge-launch:") for l in lines) and not [e for e in S.log if "/player/play" in e["path"]],
+              "unplayable: clicking a greyed-out track starts nothing", str(lines[-5:]))
+        S.log.clear()
+        st, _, lines = signin(base, d, port=sport, act_signin=False, extra=["--size", "1280x1300", "--edge-path", "x:\\fake\\msedge.exe",
+                                                                           "--act", f"{H_TRACK},{arg(SRC_RECENT, 1)}"])
+        logt = open(os.path.join(d, "bytestream.log"), encoding="utf-8").read()
+        check(any(l.startswith("edge-launch:") for l in lines), "unplayable: the next row still plays", "LOG:" + repr(logt[-900:]))
+        S.unplayable = set()
+        shutil.rmtree(d, ignore_errors=True)
+
+        # the window comes back at the size it had last time
+        d = tempfile.mkdtemp(prefix="bs-data-")
+        rc, out, st, path = run(["--demo", "--size", "900x700"], shot=True, data_dir=d)
+        w1 = struct.unpack("<i", open(path, "rb").read()[18:22])[0] if path and os.path.exists(path) else 0
+        if path and os.path.exists(path):
+            os.remove(path)
+        rc, out, st, path = run(["--demo"], shot=True, data_dir=d)
+        w2 = struct.unpack("<i", open(path, "rb").read()[18:22])[0] if path and os.path.exists(path) else 0
+        if path and os.path.exists(path):
+            os.remove(path)
+        check(w1 == 900 and w2 == 900, "window: the size is remembered between runs", f"{w1} then {w2}")
+        ini = open(os.path.join(d, "settings.ini"), encoding="utf-8").read() if os.path.exists(os.path.join(d, "settings.ini")) else ""
+        check("winw=900" in ini and "winh=700" in ini, "window: saved as winw / winh in settings.ini", ini)
         shutil.rmtree(d, ignore_errors=True)
 
 

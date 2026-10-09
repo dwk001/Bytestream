@@ -93,6 +93,8 @@ PROC track_copy, 2
         mov     rcx, loc(0)
         mov     eax, [rcx+TR_DUR]
         mov     [rdx+TR_DUR], eax
+        mov     eax, [rcx+TR_FLAGS]
+        mov     [rdx+TR_FLAGS], eax
         EPROC
 
 PROC np_clear, 0

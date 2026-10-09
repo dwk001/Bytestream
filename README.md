@@ -1,61 +1,99 @@
 # ByteStream
 
-A native Windows Spotify player written in **x86-64 assembly** (NASM). No C, no Rust, no runtime:
-the window, GDI+ drawing, JSON parser and application logic are all assembly, calling Win32 DLLs
-directly.
+A native Windows Spotify player written in **x86-64 assembly** (NASM). No C, no Rust, no runtime library:
+the window, GDI+ drawing, JSON parser, HTTP client, OAuth, local web server and all application logic are
+assembly, calling Win32 DLLs directly. One `.exe`, about 230 KB.
 
-> Status: work in progress. The UI, data model and test harness are done and run in a built-in demo
-> mode. Live Spotify sign-in, API calls and in-app playback are the next milestones (see below).
+Features: Home, Search (results as you type), Library (playlists, liked songs, albums), playlist and album pages,
+now-playing bar with seek / volume / shuffle / repeat, queue panel, full-screen view with cover-tinted
+background, three themes, per-monitor DPI scaling, cover art with anti-aliased vector icons and text,
+heart buttons (save / remove), a right-click menu everywhere (add to queue, play next, add to playlist, copy link,
+open in Spotify ...), playlist create / rename / delete, add and remove tracks, media keys.
 
-## What it does today
+> Everything is controlled from the window. There is no config file to edit and no command line to learn.
 
-- Home, Search, Library (playlists / liked songs / albums), playlist and album pages
-- Now-playing bar with seek, volume, shuffle, repeat, queue panel and full-screen view
-- Cover art with an ambient colour tint, anti-aliased vector icons and text (GDI+)
-- Dark, Midnight and Light themes; per-monitor DPI scaling
-- `--demo` mode with built-in sample music, so the whole UI works offline
+## Setting it up (once)
 
-## Spotify and the terms of service
+1. **Premium.** Spotify only lets third-party players stream with a Premium account.
+2. **Register an app.** Open <https://developer.spotify.com/dashboard>, create an app and add
+   `http://127.0.0.1:8989/callback` as a Redirect URI (ByteStream shows the exact address, with a Copy button, on
+   its first screen and in Settings). While the app is in *development mode* Spotify lets you list up to five
+   users; add your own account under *User management*.
+3. **Paste the client ID** into ByteStream's first screen and press *Sign in with Spotify*. Your browser opens
+   Spotify's consent page; when you accept, ByteStream is signed in. The sign-in uses OAuth with PKCE, so no
+   client secret exists. Your refresh token is stored encrypted for your Windows account (DPAPI) in
+   `%APPDATA%\ByteStream\auth.bin`; *Sign out* in Settings deletes it.
+4. **Play something.** The first play starts a small hidden Microsoft Edge window (see below) and
+   ByteStream appears in Spotify's device list as **ByteStream**.
 
-ByteStream will use only Spotify's **official** interfaces:
+Windows may show *SmartScreen* ("Windows protected your PC") the first time, because the exe is unsigned
+(*More info > Run anyway*). Settings > Diagnostics has *Test audio*, *Open log folder* and *Copy diagnostics*
+if anything misbehaves; the log never contains tokens.
 
-- OAuth 2.0 Authorization Code with PKCE (loopback redirect `http://127.0.0.1:8989/callback`)
-- The Spotify Web API for your library, playlists and search
-- The Spotify **Web Playback SDK**, hosted in WebView2, so audio plays inside ByteStream
+## How playback works, and why it is allowed
 
-It does not decode or decrypt Spotify's streams and does not use any private protocol.
-Playback requires **Spotify Premium** (a Spotify requirement), and the app must be registered in the
-[Spotify developer dashboard](https://developer.spotify.com/dashboard); you paste its client ID into
-ByteStream on first run. ByteStream is not affiliated with Spotify.
+Spotify audio is DRM-protected. ByteStream never decodes or decrypts it. Playback uses Spotify's **official
+Web Playback SDK**, which needs a browser engine with Widevine, so ByteStream starts Microsoft Edge (or Chrome)
+in app mode with its own private profile, minimised, pointed at a page served by ByteStream on
+`127.0.0.1`. That page is a tiny script (`web/player.js`) that makes the browser a Spotify Connect device
+named ByteStream and relays commands and state to the app over local HTTP. The helper is started on the first
+play, stopped after ten idle minutes, and can never outlive ByteStream (it lives in a Windows job object).
+
+Everything else uses the official Web API with OAuth 2.0 PKCE. No librespot, no private protocol, no scraping.
+Things Spotify's API cannot do are done honestly: it has no endpoint to remove, reorder or insert into the
+queue, so *Play next / Remove / Move / Clear* rebuild the queue by restarting the current track from the same
+position with `[current, queue...]` (playback then leaves its album or playlist context).
+
+Spotify's Developer Policy asks that apps add independent value and not replace Spotify's core experience; this is
+a personal, non-commercial project for a development-mode app. Music, metadata and cover art belong to Spotify
+(*Open in Spotify* is in every right-click menu). ByteStream is not affiliated with Spotify; Spotify is a
+trademark of Spotify AB.
+
+## Security notes
+
+- The local server binds only to `127.0.0.1`, checks the `Host` header exactly (DNS rebinding), requires a
+  per-run random secret for the player page and its bridge, sends no CORS headers, and accepts a sign-in
+  callback exactly once for the state value it issued.
+- Tokens exist only in memory and in the DPAPI-encrypted file; logs and *Copy diagnostics* redact them.
+- Only one ByteStream runs per data directory (a second launch focuses the first).
 
 ## Build
 
-Needs `nasm`, `lld-link` and Python 3. Works on Linux (cross-assembling) and on Windows.
+Needs `nasm`, `lld-link` (LLVM) and Python 3. Works on Linux (cross-assembling) and on Windows.
 
 ```
-make                 # -> build/bytestream.exe
-make test            # unit selftests + scripted UI flows
+python tools/build.py        # -> build/bytestream.exe (+ build.map for crash reports)
+make                         # the same, via make
+python tests/run_tests.py    # 200+ end-to-end checks against the real .exe (Wine + Xvfb on Linux)
 ```
 
-On Linux the tests run the real `.exe` under Wine + Xvfb. Useful flags:
+`tests/fake_spotify.py` is a small stateful Spotify (accounts + Web API + images) the tests run the app against;
+`tests/player_page.js` tests `web/player.js` against a mocked SDK in headless Chromium. GitHub Actions
+(`.github/workflows/windows.yml`) builds and runs everything on a real Windows runner, renders screenshots and
+uploads the exe.
+
+Developer flags (for the tests; normal use needs none):
 
 | flag | effect |
 | --- | --- |
-| `--demo` | load built-in sample music instead of signing in |
-| `--selftest` | run the unit checks and exit |
-| `--page N` `--tab N` `--detail N` `--theme N` | start on a given screen / theme |
+| `--demo` | built-in sample music instead of signing in |
+| `--selftest` | unit checks |
+| `--page N` `--tab N` `--detail N` `--theme N` `--size WxH` `--scale P` | start on a screen |
 | `--play` `--seek S` `--volume V` `--queue` `--fullscreen` | start in a playback state |
-| `--act ID,ARG` | activate an on-screen control (fails if it is not actually on screen) |
+| `--act ID,ARG` / `--ctx ID,ARG` | click / right-click a control that is really on screen |
+| `--act-late` `--ctx-late` `--hold` | the same, driven by a fake player page |
 | `--dump` | print the app state as `key=value` lines |
-| `--screenshot FILE.bmp` | save the rendered frame and exit |
-
-`tools/render_all.sh` renders every screen to PNG.
+| `--screenshot FILE.bmp` | save the frame and exit |
+| `--api-base` `--auth-base` `--no-browser` `--data-dir` | point at the fake Spotify, print instead of opening |
 
 ## Layout
 
 ```
 src/        assembly sources (main.asm includes the rest)
-web/        player page for the Spotify Web Playback SDK
-tests/      end-to-end tests and recorded API fixtures
-tools/      import-library generator, screenshot and fixture helpers
+web/        the player page for the Web Playback SDK
+tests/      end-to-end tests, fake Spotify, recorded API shapes
+tools/      import-library generator, build script, screenshot and crash-map helpers
 ```
+
+Crash reports in the log hold function offsets; `python tools/crashmap.py build/bytestream.map --log bytestream.log`
+turns them into function names (use the map from the same build).

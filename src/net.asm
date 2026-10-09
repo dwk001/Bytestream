@@ -44,7 +44,8 @@ extern PeekMessageW, GetTickCount64
 %define TAG_SAVE   10                   ; PUT / DELETE /me/library answered
 %define TAG_QUEUE  11                   ; GET /me/player/queue answered
 %define TAG_QADD   12                   ; POST /me/player/queue answered
-%define TAG_COUNT  13                   ; grows as handlers are added
+%define TAG_PLMOD  13                   ; a playlist change answered (arg = block [gen][kind][id])
+%define TAG_COUNT  14                   ; grows as handlers are added
 %define NQ_COUNT   4
 
 section .bss
@@ -84,6 +85,7 @@ net_handlers:
         dq h_save
         dq h_queue
         dq h_qadd
+        dq h_plmod
 
 section .text
 

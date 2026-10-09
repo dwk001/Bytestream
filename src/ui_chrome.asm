@@ -180,6 +180,19 @@ PROC paint_sidebar, 12
         mov     edx, eax
         S       18
         TXTL    w_playlists_cap, edx, r14d, 160, eax
+        S       32
+        mov     ebx, eax                        ; "+" button box
+        S       12
+        mov     esi, dword loc(0)
+        sub     esi, eax
+        sub     esi, ebx                        ; x
+        S       7
+        mov     edi, r14d
+        sub     edi, eax                        ; y
+        S       16
+        mov     r15d, eax                       ; icon size
+        SETCOL  T_MUTED_FG
+        IBTN    ic_plus, esi, edi, ebx, H_NEW_PL, 0, r15d, 0, 0
         S       24
         add     r14d, eax
         ; scrolling list
