@@ -3,3 +3,5 @@ build/
 *.obj
 *.lib
 *.exe
+__pycache__/
+*.pyc

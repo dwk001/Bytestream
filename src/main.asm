@@ -827,11 +827,12 @@ PROC run_act_at, 2
         call    UpdateWindow                    ; paint what arrived since the last frame, so the hit list is current
         cmp     r12d, 0xF000                    ; pseudo target: a key press (code in the argument) in the dialog's name field
         jne     .real
-        mov     rcx, [edit_dn]
-        mov     edx, 0x0100                     ; WM_KEYDOWN
-        mov     r8d, r13d
-        xor     r9d, r9d
-        call    SendMessageW
+        mov     rax, [edit_dn]                  ; the message loop's own check, fed a hand-made WM_KEYDOWN
+        mov     [msg_buf], rax
+        mov     dword [msg_buf+8], 0x0100
+        mov     [msg_buf+16], r13
+        lea     rcx, [msg_buf]
+        call    edit_pretranslate
         jmp     .painted
 .real:
         xor     esi, esi
@@ -1296,7 +1297,6 @@ PROC start, 8
         mov     ecx, ID_EDIT_DD
         call    make_edit
         mov     [edit_dd], rax
-        call    edits_subclass
         call    edit_fill_from_settings
         mov     rcx, [edit_search]
         mov     edx, 0x1501                     ; EM_SETCUEBANNER
@@ -1394,6 +1394,10 @@ PROC start, 8
         call    GetMessageW
         test    eax, eax
         jle     .exit
+        lea     rcx, [msg_buf]
+        call    edit_pretranslate
+        test    eax, eax
+        jnz     .loop
         lea     rcx, [msg_buf]
         call    TranslateMessage
         lea     rcx, [msg_buf]

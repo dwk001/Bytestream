@@ -50,81 +50,71 @@ WSTR w_quote_w, `"`
 %define WM_DLG_CANCEL (WM_APP + 5)
 %define WM_SEARCH_NOW (WM_APP + 6)
 
-extern CallWindowProcW, SetWindowLongPtrW
-
-section .bss
-edit_orig_proc: resq 1                  ; the EDIT class's own window procedure (we sit in front of it)
-
 section .data
 align 8
 edit_ptrs:      dq edit_search, edit_client, edit_port, edit_dn, edit_dd
 
 section .text
 
-; Window procedure placed in front of the EDIT controls: Enter confirms and Esc cancels an open dialog (a bare EDIT
-; would just beep), Enter in the search box searches at once.   rcx = hwnd, rdx = message, r8 = wParam, r9 = lParam
-PROC edit_subproc, 6
-        mov     loc(0), rcx
-        mov     loc(1), rdx
-        mov     loc(2), r8
-        mov     loc(3), r9
-        cmp     edx, 0x0100                     ; WM_KEYDOWN
-        je      .k
-        cmp     edx, 0x0102                     ; WM_CHAR (suppress the beep for Enter / Esc)
-        je      .c
-.pass:  mov     rcx, [edit_orig_proc]
-        mov     rdx, loc(0)
-        mov     r8, loc(1)
-        mov     r9, loc(2)
-        mov     rax, loc(3)
-        mov     outarg(5), rax
-        call    CallWindowProcW
-        jmp     .out
-.k:     cmp     r8d, 13
+; Enter and Esc inside one of our EDIT controls.  The message loop asks before it translates a key message
+; (no window subclassing): Enter confirms / Esc cancels an open dialog, Enter in the search box searches at once.
+; rcx = hwnd that received the key, edx = virtual key  ->  eax = message to post to the main window, 0 = not ours
+PROC edit_key_msg, 0
+        test    rcx, rcx
+        jz      .no
+        lea     rax, [edit_ptrs]
+        xor     r8d, r8d
+.f:     mov     r9, [rax+r8*8]
+        cmp     rcx, [r9]
+        je      .ours
+        inc     r8d
+        cmp     r8d, 5
+        jb      .f
+        jmp     .no
+.ours:  cmp     edx, 13                         ; VK_RETURN
         je      .enter
-        cmp     r8d, 27
-        jne     .pass
+        cmp     edx, 27                         ; VK_ESCAPE
+        jne     .no
         cmp     dword [dlg_kind], 0
-        je      .pass
-        mov     edx, WM_DLG_CANCEL
-        jmp     .post
-.enter: mov     edx, WM_DLG_OK
-        cmp     dword [dlg_kind], 0
-        jne     .post
-        mov     rax, loc(0)
-        cmp     rax, [edit_search]
-        jne     .pass
-        mov     edx, WM_SEARCH_NOW
-.post:  mov     rcx, [hwnd]
+        je      .no
+        mov     eax, WM_DLG_CANCEL
+        jmp     .out
+.enter: cmp     dword [dlg_kind], 0
+        je      .search
+        mov     eax, WM_DLG_OK
+        jmp     .out
+.search: cmp    rcx, [edit_search]
+        jne     .no
+        mov     eax, WM_SEARCH_NOW
+        jmp     .out
+.no:    xor     eax, eax
+.out:   EPROC
+
+; rcx = MSG*  ->  eax = 1 when the message was consumed (a key for one of our EDITs that means something here)
+; WM_KEYDOWN posts the command; WM_CHAR for the same key is eaten so the EDIT does not beep.
+PROC edit_pretranslate, 2
+        mov     rbx, rcx
+        mov     eax, [rbx+8]
+        cmp     eax, WM_KEYDOWN
+        je      .ask
+        cmp     eax, WM_CHAR
+        jne     .no
+.ask:   mov     rcx, [rbx]
+        mov     edx, [rbx+16]
+        call    edit_key_msg
+        test    eax, eax
+        jz      .no
+        cmp     dword [rbx+8], WM_CHAR
+        je      .eat
+        mov     edx, eax
+        mov     rcx, [hwnd]
         xor     r8d, r8d
         xor     r9d, r9d
         call    PostMessageW
-        xor     eax, eax
+.eat:   mov     eax, 1
         jmp     .out
-.c:     cmp     r8d, 13
-        je     .swallow
-        cmp     r8d, 27
-        jne     .pass
-.swallow:
-        xor     eax, eax
+.no:    xor     eax, eax
 .out:   EPROC
-
-; Puts edit_subproc in front of every EDIT control (called once after they exist)
-PROC edits_subclass, 2
-        lea     rbx, [edit_ptrs]
-        xor     esi, esi
-.l:     mov     rax, [rbx+rsi*8]
-        mov     rcx, [rax]
-        test    rcx, rcx
-        jz      .n
-        mov     edx, -4                         ; GWLP_WNDPROC
-        lea     r8, [edit_subproc]
-        call    SetWindowLongPtrW
-        mov     [edit_orig_proc], rax
-.n:     inc     esi
-        cmp     esi, 5
-        jb      .l
-        EPROC
 
 ; ecx = kind, rdx = Card* of the playlist (edit / delete) or 0
 PROC dlg_open, 8
