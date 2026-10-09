@@ -1,12 +1,13 @@
 ; main.asm - ByteStream for Windows, x86-64 assembly.  Single translation unit: this file includes the rest.
 %include "win64.inc"
 
+; data sections start on 16 bytes; individual items are aligned where Windows or SSE care (WSTR, buffers)
+section .data align=16
+section .bss align=16
+
 ; All code lives in one .text; text_begin / text_end bound it for the unwind table at the end of this file.
 section .text
 text_begin:
-%ifdef PAD_TEXT
-        times PAD_TEXT nop              ; CI layout experiments only (tools/build.py honours BS_NASM_DEFS)
-%endif
 
 %include "core.asm"
 %include "json.asm"
@@ -43,9 +44,6 @@ text_begin:
 extern GetCommandLineW, CommandLineToArgvW, lstrcmpW, GetDpiForSystem, SetWindowTextW, IsWindowVisible
 
 section .bss
-%ifdef PAD_BSS
-                resb PAD_BSS
-%endif
 cli_selftest:   resd 1
 cli_demo:       resd 1
 cli_page:       resd 1                  ; -1 = default
@@ -84,6 +82,7 @@ cli_nact:       resd 1
 cli_ready:      resd 1                  ; set once scripted actions are done (screenshot may be taken)
 cli_act_id:     resd 16                 ; bit 16 = --act-late (waits for the player page), bit 17 = already run
 cli_act_arg:    resd 16
+                align 8
 dump_buf:       resb 4096
 cli_run_ms:     resd 1                  ; --run-ms N: keep running N ms after the scripted actions, then dump and exit
 run_t0:         resq 1
@@ -93,9 +92,6 @@ cli_hold:       resd 1                  ; --hold: with --dump, keep running unti
 dump_tmp:       resd 1
 
 section .data
-%ifdef PAD_DATA
-                times PAD_DATA db 0
-%endif
 WSTR a_selftest, "--selftest"
 WSTR a_demo, "--demo"
 WSTR a_shot, "--screenshot"

@@ -37,6 +37,7 @@ menu_n:         resd 1
 menu_off:       resd 1                  ; first row shown
 menu_src:       resd 1                  ; list source of the track the menu was opened on
 menu_arg:       resd 1                  ; the hit argument of the item the menu was opened on
+                align 8
 menu_items:     resb MENU_MAX*MI_SIZE
 menu_uri:       resq 1                  ; owned UTF-8 URI of the target
 queue_due:      resq 1                  ; GetTickCount64 at which the queue should be re-read (0 = never)

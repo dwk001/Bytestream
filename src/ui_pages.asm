@@ -19,6 +19,7 @@ det_img:        resq 1                  ; UTF-8, owned
 det_uri:        resq 1
 det_kind:       resd 1
 det_count:      resd 1
+                align 8
 sys_time:       resw 8
 
 section .data

@@ -8,8 +8,11 @@ extern lstrcpyW, lstrcatW
 %define SET_PORT_DEFAULT 8989
 
 section .bss
+                align 8
 data_dir:       resw 520                ; UTF-16, no trailing backslash
+                align 8
 set_path:       resw 540
+                align 8
 set_client_id:  resb 160                ; UTF-8, NUL-terminated
 set_port:       resd 1
 set_scale:      resd 1                  ; percent; 0 = follow the system DPI

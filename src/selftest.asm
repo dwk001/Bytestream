@@ -185,6 +185,7 @@ l_b:            resq 3
 l_c:            resq 3
 
 section .bss
+                align 8
 st_tmp:         resb 256
 st_buf:         resq 3
 
@@ -755,9 +756,13 @@ ZSTR ta_s2, "contains: needle absent"
 ZSTR sa_cod, "cod"
 
 section .bss
+                align 8
 sa_verif1:      resb 72
+                align 8
 sa_hex:         resb 80
+                align 8
 sa_out:         resb 80
+                align 8
 sa_chal:        resb 64
 
 section .text

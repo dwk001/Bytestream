@@ -121,6 +121,7 @@ clip_x0:        resd 1
 clip_y0:        resd 1
 clip_x1:        resd 1
 clip_y1:        resd 1
+                align 8
 hit_tab:        resb HIT_SIZE*HIT_MAX
 toast_text:     resq 1
 toast_until:    resq 1
@@ -146,6 +147,7 @@ ver_w:          resq 1                  ; UTF-16 "Version 0.1 (build ...)" for A
 search_dirty:   resd 1
 user_name:      resq 1                  ; UTF-16, owned
 user_id:        resq 1                  ; Spotify user id (UTF-8, owned): decides which playlists are ours to change
+                align 8
 logfont:        resb 96
 
 section .text

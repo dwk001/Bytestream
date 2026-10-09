@@ -58,9 +58,11 @@ net_started:    resd 1
 net_api_base:   resq 1                  ; owned UTF-8, no trailing slash
 net_auth_base:  resq 1
 tok_lock:       resd 1
+                align 8
 tok_access:     resb 640                ; UTF-8 access token (NUL-terminated)
 dbg_results:    resd 32                 ; 8 entries x {status, hash of body}
 dbg_count:      resd 1
+                align 8
 dbg_body:       resb 256                ; first bytes of the most recent debug body
 
 section .data

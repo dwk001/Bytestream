@@ -27,8 +27,6 @@ jobs:
 
       - name: Build
         shell: pwsh
-        env:
-          BS_NASM_DEFS: "-DNO_WLOG_REG -DNO_WLOG_CW"
         run: python tools/build.py
 
       - name: Playwright (drives the preinstalled Edge for the player page test)

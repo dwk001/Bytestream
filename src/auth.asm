@@ -25,17 +25,24 @@ section .bss
 auth_state:     resd 1
 refresh_lock:    resd 1
 auth_lock:      resd 1
+                align 8
 auth_verifier:  resb 72                 ; 64 chars + NUL
+                align 8
 auth_challenge: resb 48                 ; 43 chars + NUL
+                align 8
 auth_expect:    resb 40                 ; "state" we expect on the redirect (22 chars + NUL); empty = none pending
+                align 8
 auth_refresh:   resb 520                ; refresh token (UTF-8, NUL-terminated); empty when signed out
 auth_expiry:    resq 1                  ; GetTickCount64() after which the access token must be renewed (0 = none)
 auth_wait_t0:   resq 1
+                align 8
 auth_path:      resw 560
 auth_url_buf:   resq 3                  ; Buf holding the last authorize URL (for "Copy sign-in link")
 auth_blob_in:   resq 2                  ; DATA_BLOB { dword cb; qword pb }
 auth_blob_out:  resq 2
+                align 8
 auth_rnd:       resb 64
+                align 8
 auth_hash:      resb 32
 auth_restoring: resd 1                  ; 1 while a stored session is being restored at startup
 

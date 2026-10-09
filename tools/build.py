@@ -52,8 +52,7 @@ def main():
 
     obj = os.path.join(BUILD, "main.obj")
     build_id = os.environ.get("BUILD_ID") or git_id()
-    extra = os.environ.get("BS_NASM_DEFS", "").split()      # e.g. -DPAD_TEXT=3 (layout experiments in CI)
-    run([nasm, "-fwin64", "-Isrc/", '-DBUILD_ID="%s"' % build_id] + extra + ["src/main.asm", "-o", obj])
+    run([nasm, "-fwin64", "-Isrc/", '-DBUILD_ID="%s"' % build_id, "src/main.asm", "-o", obj])
 
     # [symbol+register] addressing assembles to a 32-bit absolute address, which faults at a 64-bit image base.
     rel = subprocess.run([readobj, "--relocations", obj], capture_output=True, text=True, cwd=ROOT).stdout
@@ -67,7 +66,31 @@ def main():
     run([lld, "/nologo", "/subsystem:windows", "/entry:start", "/manifest:embed",
          "/manifestinput:src/bytestream.manifest", "/map:" + os.path.join(BUILD, "bytestream.map"),
          "/out:" + exe, obj] + [os.path.join(BUILD, l + ".lib") for l in LIBS])
+    check_wide_strings()
     print("built", os.path.relpath(exe, ROOT), os.path.getsize(exe), "bytes")
+
+
+def check_wide_strings():
+    """Every WSTR (UTF-16 string) must start on an even address: Windows rejects an odd class name or mutex name."""
+    import glob
+    import re
+    names = set()
+    for f in glob.glob(os.path.join(ROOT, "src", "*.asm")):
+        names.update(re.findall(r"^WSTR\s+(\w+)\s*,", open(f, encoding="utf-8").read(), re.M))
+    odd = []
+    seen = set()
+    for line in open(os.path.join(BUILD, "bytestream.map"), encoding="utf-8", errors="replace"):
+        parts = line.split()
+        if len(parts) >= 3 and parts[1] in names:
+            seen.add(parts[1])
+            if int(parts[2], 16) & 1:
+                odd.append(parts[1])
+    if odd:
+        print("error: UTF-16 strings on odd addresses:", ", ".join(odd))
+        sys.exit(1)
+    if names and not seen:
+        print("error: could not find any WSTR symbol in the linker map")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

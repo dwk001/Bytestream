@@ -3,7 +3,11 @@
 extern GetProcessHeap, HeapAlloc, HeapFree, HeapReAlloc, ExitProcess
 extern MultiByteToWideChar, WideCharToMultiByte, lstrlenW, WriteFile, GetStdHandle
 
+; UTF-16 strings start on an even address: the kernel probes the class name, mutex name ... it is handed with
+; 2-byte alignment, so a string that happened to land on an odd address made RegisterClassExW fail on real
+; Windows (Wine does not check).
 %macro WSTR 2
+        align 2
 %1:     dw __utf16__(%2), 0
 %endmacro
 

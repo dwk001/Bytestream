@@ -22,21 +22,27 @@ extern GetFileAttributesW
 
 section .bss
 sdk_ready:      resd 1                  ; 1 once the page reported the Connect device
+                align 8
 sdk_device:     resb 96                 ; its device id (UTF-8)
 play_pending:   resq 1                  ; heap JSON body of a play request waiting for the helper
 play_last:      resq 1                  ; copy of the last play body sent (heap), for one retry
 play_retry_at:  resq 1                  ; GetTickCount64 at which to resend it (0 = none)
 play_retried:   resd 1
+                align 8
 edge_exe:       resw 540
 edge_override:  resq 1                  ; --edge-path (UTF-16), tests only
 edge_proc:      resq 1
 edge_job:       resq 1
 edge_t0:        resq 1                  ; when the helper was launched
 idle_t0:        resq 1                  ; when playback last stopped (0 = playing)
+                align 8
 edge_si:        resb 112                ; STARTUPINFOW
+                align 8
 edge_pi:        resb 32                 ; PROCESS_INFORMATION
+                align 8
 edge_jobinfo:   resb 144                ; JOBOBJECT_EXTENDED_LIMIT_INFORMATION
 edge_regsz:     resd 1
+                align 8
 edge_regbuf:    resw 540
 
 section .data

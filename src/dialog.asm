@@ -22,6 +22,7 @@ dlg_public:     resd 1
 dlg_mine:       resd 1                  ; the playlist is ours (delete) rather than followed (remove)
 dlg_id:         resq 1                  ; owned UTF-8 playlist id (edit / delete)
 dlg_msg:        resq 1                  ; owned UTF-16 question (delete)
+                align 8
 dlg_wbuf:       resw 260
 edit_dnx:       resd 4                  ; name field rectangle (x y w h)
 edit_ddx:       resd 4                  ; description field rectangle

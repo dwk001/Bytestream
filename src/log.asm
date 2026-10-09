@@ -18,10 +18,14 @@ section .bss
 log_h:          resq 1
 log_lock:       resd 1
 crash_quiet:    resd 1
+                align 8
 log_path:       resw 560
+                align 8
 log_old_path:   resw 560
 os_ver:         resd 7                  ; major, minor, build (RTL_OSVERSIONINFOW is 276 bytes; we keep the head)
+                align 8
 os_ver_big:     resb 280
+                align 8
 st_now:         resw 8
 
 section .data
@@ -510,6 +514,7 @@ ZSTR v_post, ")"
 WSTR w_mutex_pre, `Local\\ByteStream-`
 WSTR w_class_name, "ByteStreamWindow"
 section .bss
+                align 8
 mutex_name:     resw 40
 section .text
 

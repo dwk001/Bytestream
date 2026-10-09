@@ -26,11 +26,13 @@ extern WSAGetLastError, getsockname
 %define SRV_CMD_SLOTS    64
 
 section .bss
+                align 8
 srv_wsa:        resb 408                ; WSADATA
 srv_sock:       resq 1                  ; listening socket
 srv_started:    resd 1
 srv_bound_port: resd 1
 srv_err:        resd 1                  ; WSAGetLastError() of the last failed start (10048 = port in use)
+                align 8
 srv_secret:     resb 40                 ; per-run secret for /player and /bridge/* (22 chars + NUL)
 srv_cmd_q:      resq SRV_CMD_SLOTS      ; commands for the player page (heap UTF-8 JSON strings)
 srv_cmd_head:   resd 1

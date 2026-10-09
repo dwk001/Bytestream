@@ -18,6 +18,7 @@ extern GdipCreateLineBrushI, GetLocalTime, SHCreateMemStream
 %define IMG_BUDGET  (48*1024*1024)
 
 section .bss
+                align 8
 img_tab:        resb IMG_MAX*IMG_ENT
 img_cnt:        resd 1
 img_bytes:      resq 1                  ; pixel bytes held by READY entries

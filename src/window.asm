@@ -36,8 +36,11 @@ h_hand:         resq 1
 shot_done:      resd 1
 cli_shot:       resq 1                  ; wide path of --screenshot (0 = interactive)
 first_paint:    resd 1
+                align 8
 wc:             resb 80
+                align 8
 msg_buf:        resb 56
+                align 8
 ps_buf:         resb 72
 frame_valid:    resd 1                  ; a full frame has been rendered (hit list and layout are current)
 bar_only:       resd 1                  ; this paint redraws the player bar only (playback progress ticks)
@@ -47,13 +50,19 @@ paints_full:    resd 1                  ; counters shown by --dump
 paints_bar:     resd 1
 paint_calls:    resd 1                  ; WM_PAINT messages received / WM_SIZE with a usable size (--dump)
 size_calls:     resd 1
+                align 8
 rc_buf:         resb 16
+                align 8
 tme_buf:        resb 24
+                align 8
 bmi_buf:        resb 48
 edit_last:      resd 20                 ; last rectangle given to each EDIT (x y w h) x5
 edit_vis:       resd 5
+                align 8
 edit_text:      resw 200
+                align 8
 search_buf:     resw 260
+                align 8
 shot_hdr:       resb 64
 mmi_min_w:      resd 1
 mmi_min_h:      resd 1
@@ -1011,7 +1020,6 @@ PROC window_create, 8
         mov     [rdi+64], rax
         lea     rcx, [wc]
         call    RegisterClassExW
-%ifndef NO_WLOG_REG
         lea     rcx, [l_w_class]
         movzx   edx, ax
         call    log_num
@@ -1019,7 +1027,6 @@ PROC window_create, 8
         lea     rcx, [l_w_err1]
         mov     edx, eax
         call    log_num
-%endif
         ; outer size from the wanted client size
         mov     dword [rc_buf], 0
         mov     dword [rc_buf+4], 0
@@ -1056,7 +1063,6 @@ PROC window_create, 8
         mov     qword outarg(12), 0
         call    CreateWindowExW
         mov     [hwnd], rax
-%ifndef NO_WLOG_CW
         lea     rcx, [l_w_hwnd]
         mov     rdx, rax
         call    log_num
@@ -1070,7 +1076,6 @@ PROC window_create, 8
         lea     rcx, [l_w_size2]
         mov     rdx, loc(4)
         call    log_num
-%endif
         EPROC
 
 ; ---------------------------------------------------------------- setup inputs -> settings
