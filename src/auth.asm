@@ -608,9 +608,13 @@ PROC auth_on_callback, 12
         mov     rcx, loc(0)
         call    u8_len
         mov     r8, rax
+        mov     loc(11), rax                    ; DIAGNOSTIC: remember the code length
         lea     rcx, loc(4)
         mov     rdx, loc(0)
         call    buf_append_urlenc
+        lea     rcx, [a_dbg_clen]
+        mov     rdx, loc(11)
+        call    log_num
         lea     rcx, loc(4)
         lea     rdx, [a_redir_pre]
         call    buf_append_z
@@ -620,6 +624,10 @@ PROC auth_on_callback, 12
         lea     rcx, loc(4)
         mov     rdx, loc(7)
         call    buf_append_urlenc
+        lea     rcx, [a_dbg_redir]              ; DIAGNOSTIC: the redirect URI sent (not a secret)
+        call    log_msg
+        mov     rcx, loc(7)
+        call    log_msg
         lea     rcx, loc(7)
         call    buf_free
         lea     rcx, loc(4)
@@ -637,6 +645,9 @@ PROC auth_on_callback, 12
         lea     rcx, loc(4)
         lea     rdx, [auth_verifier]
         call    buf_append_z
+        lea     rcx, [a_dbg_blen]               ; DIAGNOSTIC: total form body length
+        mov     rdx, loc(3)
+        call    log_num
         lea     rcx, loc(10)
         lea     rdx, [a_token_path]
         call    auth_url
@@ -744,6 +755,14 @@ PROC h_token, 4
         lea     rdx, [j_errdesc]
         call    jpu
         mov     loc(2), rax
+        lea     rcx, [a_dbg_err]                ; DIAGNOSTIC: Spotify's own error name and text (no secrets in them)
+        call    log_msg
+        mov     rcx, loc(1)
+        call    log_msg
+        lea     rcx, [a_dbg_desc]
+        call    log_msg
+        mov     rcx, loc(2)
+        call    log_msg
         mov     rcx, loc(1)
         lea     rdx, [e_invalid_client]
         call    u8_eq
@@ -788,6 +807,11 @@ PROC h_token, 4
 
 section .data
 ZSTR s_word_redirect, "redirect"
+ZSTR a_dbg_clen, "token request: code length "
+ZSTR a_dbg_blen, "token request: body length "
+ZSTR a_dbg_redir, "token request: redirect_uri sent:"
+ZSTR a_dbg_err, "token endpoint error name:"
+ZSTR a_dbg_desc, "token endpoint error description:"
 ZSTR a_signed_in_as, "Signed in as "
 section .text
 

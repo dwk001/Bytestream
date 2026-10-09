@@ -674,7 +674,7 @@ PROC srv_conn, 12
         mov     ecx, SRV_REQ_MAX + 1
         call    mem_alloc
         mov     loc(1), rax
-        mov     ecx, 1024
+        mov     ecx, 4096                       ; real Spotify codes are > 700 chars: room for 3000 at +224
         call    mem_alloc
         mov     loc(7), rax
         mov     qword loc(2), 0
@@ -878,7 +878,7 @@ PROC srv_conn, 12
         lea     rdx, [q_error]
         mov     r8, loc(7)
         add     r8, 224
-        mov     r9d, 700
+        mov     r9d, 3000
         call    qget
         test    eax, eax
         js      .nocberr
@@ -893,7 +893,7 @@ PROC srv_conn, 12
         lea     rdx, [q_code]
         mov     r8, loc(7)
         add     r8, 224
-        mov     r9d, 700
+        mov     r9d, 3000
         call    qget
         test    eax, eax
         jle     .badreq
