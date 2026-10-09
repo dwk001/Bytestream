@@ -2,7 +2,7 @@
 
 A native Windows Spotify player written in **x86-64 assembly** (NASM). No C, no Rust, no runtime library:
 the window, GDI+ drawing, JSON parser, HTTP client, OAuth, local web server and all application logic are
-assembly, calling Win32 DLLs directly. One `.exe`, about 230 KB.
+assembly, calling Win32 DLLs directly. One `.exe`, about 250 KB.
 
 Features: Home, Search (results as you type), Library (playlists, liked songs, albums), playlist and album pages,
 now-playing bar with seek / volume / shuffle / repeat, queue panel, full-screen view with cover-tinted
@@ -85,7 +85,7 @@ Needs `nasm`, `lld-link` (LLVM) and Python 3. Works on Linux (cross-assembling) 
 ```
 python tools/build.py        # -> build/bytestream.exe (+ build.map for crash reports)
 make                         # the same, via make
-python tests/run_tests.py    # 200+ end-to-end checks against the real .exe (Wine + Xvfb on Linux)
+python tests/run_tests.py    # 330+ end-to-end checks against the real .exe (Wine + Xvfb on Linux)
 ```
 
 `tests/fake_spotify.py` is a small stateful Spotify (accounts + Web API + images) the tests run the app against;
