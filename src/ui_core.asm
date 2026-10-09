@@ -4,8 +4,6 @@
 ; thing, appends a rectangle + (id, arg) to the hit list.  Input then looks the mouse position up in
 ; that list (last entry wins, so later-painted widgets sit on top).
 
-extern CreateFontIndirectW, CreateSolidBrush, SetTextColor, SetBkColor
-
 ; ---- pages
 %define PAGE_HOME     0
 %define PAGE_SEARCH   1
@@ -52,6 +50,7 @@ extern CreateFontIndirectW, CreateSolidBrush, SetTextColor, SetBkColor
 %define H_TEST_AUDIO  36
 %define H_LIKE        37                ; arg: see like_uri_for
 %define H_CARD_PLAY   26
+%define H_FIELD       47                ; arg = field index (field.asm)
 %define H_PILL        27
 
 %define BA_NONE       0
@@ -128,13 +127,7 @@ hit_tab:        resb HIT_SIZE*HIT_MAX
 toast_text:     resq 1
 toast_until:    resq 1
 signed_in:      resd 1
-edit_font:      resq 1
-edit_brush:     resq 1
 edit_search:    resq 1
-edit_px:        resd 1                  ; port field rectangle
-edit_py:        resd 1
-edit_pw:        resd 1
-edit_ph:        resd 1
 edit_syncing:   resd 1                  ; set while the program (not the user) fills an input
 edit_client:    resq 1
 edit_port:      resq 1
@@ -146,11 +139,8 @@ banner_code:    resd 1
 banner_h:       resd 1
 redir_w:        resq 1                  ; UTF-16 copy of the redirect URI for display
 ver_w:          resq 1                  ; UTF-16 "Version 0.1 (build ...)" for About
-search_dirty:   resd 1
 user_name:      resq 1                  ; UTF-16, owned
 user_id:        resq 1                  ; Spotify user id (UTF-8, owned): decides which playlists are ours to change
-                align 8
-logfont:        resb 96
 
 section .text
 

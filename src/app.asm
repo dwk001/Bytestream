@@ -393,6 +393,8 @@ PROC ui_activate, 6
         je      .qrow
         cmp     ecx, H_SEARCHBOX
         je      .sbox
+        cmp     ecx, H_FIELD
+        je      .field
         cmp     ecx, H_DEMO
         je      .demo
         cmp     ecx, H_SIGNIN
@@ -560,6 +562,10 @@ PROC ui_activate, 6
         jmp     .done
 .sbox:  mov     dword [focus_req], 1
         jmp     .done
+.field: mov     ecx, dword loc(1)               ; (a test's --act; real clicks are handled in ui_mouse_down)
+        xor     edx, edx
+        call    field_focus_set
+        jmp     .done
 .demo:  call    app_load_demo
         mov     dword [page], PAGE_HOME
         jmp     .done
@@ -707,7 +713,14 @@ PROC ui_mouse_move, 2
 
 ; Updates the seek / volume drag from the mouse x kept in mouse_x
 PROC ui_drag_update, 0
-        mov     eax, [mouse_x]
+        cmp     dword [drag_id], H_FIELD
+        jne     .bar
+        mov     ecx, [drag_w]                   ; selecting text: the caret follows the mouse, the anchor stays
+        mov     edx, [mouse_x]
+        mov     r8d, 1
+        call    field_mouse
+        jmp     .out
+.bar:   mov     eax, [mouse_x]
         sub     eax, [drag_x]
         jns     .lo
         xor     eax, eax
@@ -742,6 +755,15 @@ PROC ui_mouse_down, 2
         mov     edx, [rax+20]
 .rec:   mov     [press_id], ecx
         mov     [press_arg], edx
+        cmp     ecx, H_FIELD
+        je      .fld
+        cmp     ecx, H_SEARCHBOX
+        je      .fldbox
+        push    rcx
+        push    rdx
+        call    field_blur                      ; a click anywhere else takes the keyboard back
+        pop     rdx
+        pop     rcx
         cmp     ecx, H_SEEK
         je      .seek
         cmp     ecx, H_VOL
@@ -763,6 +785,28 @@ PROC ui_mouse_down, 2
         mov     dword [drag_id], H_VOL
 .go:    call    ui_drag_update
         mov     eax, 3
+        jmp     .out
+.fld:   mov     eax, edx                        ; a text field: focus it, put the caret under the mouse, start a drag
+        inc     eax
+        cmp     eax, [fld_focus]
+        je      .fld2
+        mov     ecx, edx
+        mov     edx, 0
+        mov     loc(0), rcx
+        call    field_focus_set
+        mov     rdx, loc(0)
+.fld2:  mov     [drag_w], edx
+        mov     dword [drag_id], H_FIELD
+        mov     loc(0), rdx
+        call    ui_key_shift
+        mov     r8d, eax                        ; shift extends the old selection
+        mov     ecx, dword loc(0)
+        mov     edx, [mouse_x]
+        call    field_mouse
+        mov     eax, 3
+        jmp     .out
+.fldbox: mov    dword [focus_req], 1            ; the search pill around the field: focus it
+        mov     eax, 1
         jmp     .out
 .none:  xor     eax, eax
 .out:   EPROC
@@ -1057,3 +1101,13 @@ section .text
 section .data
 WSTR w_link_copied, "Sign-in link copied"
 section .text
+
+; -> eax = 1 while a shift key is held
+ui_key_shift:
+        sub     rsp, 40
+        mov     ecx, 0x10                       ; VK_SHIFT
+        call    GetKeyState
+        shr     eax, 15
+        and     eax, 1
+        add     rsp, 40
+        ret

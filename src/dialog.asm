@@ -24,8 +24,6 @@ dlg_id:         resq 1                  ; owned UTF-8 playlist id (edit / delete
 dlg_msg:        resq 1                  ; owned UTF-16 question (delete)
                 align 8
 dlg_wbuf:       resw 260
-edit_dnx:       resd 4                  ; name field rectangle (x y w h)
-edit_ddx:       resd 4                  ; description field rectangle
 
 section .data
 WSTR w_dlg_new, "New playlist"
@@ -47,75 +45,7 @@ WSTR w_dlg_q2, "? It will disappear from your library."
 WSTR w_dlg_q2b, " from your library?"
 WSTR w_dlg_noname, "Give the playlist a name first."
 WSTR w_quote_w, `"`
-%define WM_DLG_OK     (WM_APP + 4)
-%define WM_DLG_CANCEL (WM_APP + 5)
-%define WM_SEARCH_NOW (WM_APP + 6)
-
-section .data
-align 8
-edit_ptrs:      dq edit_search, edit_client, edit_port, edit_dn, edit_dd
-
 section .text
-
-; Enter and Esc inside one of our EDIT controls.  The message loop asks before it translates a key message
-; (no window subclassing): Enter confirms / Esc cancels an open dialog, Enter in the search box searches at once.
-; rcx = hwnd that received the key, edx = virtual key  ->  eax = message to post to the main window, 0 = not ours
-PROC edit_key_msg, 0
-        test    rcx, rcx
-        jz      .no
-        lea     rax, [edit_ptrs]
-        xor     r8d, r8d
-.f:     mov     r9, [rax+r8*8]
-        cmp     rcx, [r9]
-        je      .ours
-        inc     r8d
-        cmp     r8d, 5
-        jb      .f
-        jmp     .no
-.ours:  cmp     edx, 13                         ; VK_RETURN
-        je      .enter
-        cmp     edx, 27                         ; VK_ESCAPE
-        jne     .no
-        cmp     dword [dlg_kind], 0
-        je      .no
-        mov     eax, WM_DLG_CANCEL
-        jmp     .out
-.enter: cmp     dword [dlg_kind], 0
-        je      .search
-        mov     eax, WM_DLG_OK
-        jmp     .out
-.search: cmp    rcx, [edit_search]
-        jne     .no
-        mov     eax, WM_SEARCH_NOW
-        jmp     .out
-.no:    xor     eax, eax
-.out:   EPROC
-
-; rcx = MSG*  ->  eax = 1 when the message was consumed (a key for one of our EDITs that means something here)
-; WM_KEYDOWN posts the command; WM_CHAR for the same key is eaten so the EDIT does not beep.
-PROC edit_pretranslate, 2
-        mov     rbx, rcx
-        mov     eax, [rbx+8]
-        cmp     eax, WM_KEYDOWN
-        je      .ask
-        cmp     eax, WM_CHAR
-        jne     .no
-.ask:   mov     rcx, [rbx]
-        mov     edx, [rbx+16]
-        call    edit_key_msg
-        test    eax, eax
-        jz      .no
-        cmp     dword [rbx+8], WM_CHAR
-        je      .eat
-        mov     edx, eax
-        mov     rcx, [hwnd]
-        xor     r8d, r8d
-        xor     r9d, r9d
-        call    PostMessageW
-.eat:   mov     eax, 1
-        jmp     .out
-.no:    xor     eax, eax
-.out:   EPROC
 
 ; ecx = kind, rdx = Card* of the playlist (edit / delete) or 0
 PROC dlg_open, 8
@@ -148,20 +78,20 @@ PROC dlg_open, 8
         test    rbx, rbx
         jz      .nm
         mov     rdx, [rbx+CD_NAME]
-.nm:    call    SetWindowTextW
+.nm:    call    field_set_text
         mov     rcx, [edit_dd]
         lea     rdx, [empty_w]
-        call    SetWindowTextW
+        call    field_set_text
         mov     rdx, [cli_dlg_name]             ; tests type into the fields through these flags
         test    rdx, rdx
         jz      .nt1
         mov     rcx, [edit_dn]
-        call    SetWindowTextW
+        call    field_set_text
 .nt1:   mov     rdx, [cli_dlg_desc]
         test    rdx, rdx
         jz      .nt2
         mov     rcx, [edit_dd]
-        call    SetWindowTextW
+        call    field_set_text
 .nt2:   mov     dword [focus_req], 4
         jmp     .out
 .question:
@@ -241,7 +171,7 @@ PROC dlg_commit, 4
         mov     rcx, [edit_dn]
         lea     rdx, [dlg_wbuf]
         mov     r8d, 255
-        call    GetWindowTextW
+        call    field_get_text
         lea     rcx, [dlg_wbuf]
         mov     rdx, -1
         call    w_to_u8
@@ -261,7 +191,7 @@ PROC dlg_commit, 4
 .named: mov     rcx, [edit_dd]
         lea     rdx, [dlg_wbuf]
         mov     r8d, 255
-        call    GetWindowTextW
+        call    field_get_text
         lea     rcx, [dlg_wbuf]
         mov     rdx, -1
         call    w_to_u8
@@ -288,7 +218,7 @@ PROC dlg_commit, 4
         mov     rcx, [edit_dn]                  ; (dlg_wbuf holds the description now: read the name again)
         lea     rdx, [dlg_wbuf]
         mov     r8d, 255
-        call    GetWindowTextW
+        call    field_get_text
         lea     rcx, [dlg_wbuf]
         call    w_dup
         mov     [det_title], rax

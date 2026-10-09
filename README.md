@@ -12,6 +12,11 @@ open in Spotify ...), playlist create / rename / delete, add and remove tracks, 
 
 > Everything is controlled from the window. There is no config file to edit and no command line to learn.
 
+Everything on screen is drawn and handled by ByteStream itself, including the text boxes (caret, selection with the mouse
+or Shift+arrows, Ctrl+arrows by word, copy / cut / paste, Tab between boxes) and the animations (hover fades, smooth wheel
+scrolling, the queue panel and the full-screen view sliding). Nothing animates while nothing moves: an idle window draws
+nothing and uses no CPU.
+
 ## Setting it up (once)
 
 1. **Premium.** Spotify only lets third-party players stream with a Premium account.
@@ -94,7 +99,10 @@ Developer flags (for the tests; normal use needs none):
 | `--selftest` | unit checks |
 | `--page N` `--tab N` `--detail N` `--theme N` `--size WxH` `--scale P` | start on a screen |
 | `--play` `--seek S` `--volume V` `--queue` `--fullscreen` | start in a playback state |
-| `--act ID,ARG` / `--ctx ID,ARG` | click / right-click a control that is really on screen |
+| `--act ID,ARG` / `--ctx ID,ARG` | click / right-click a control that is really on screen (ids 0xF000.. are pseudo targets: keys, text and mouse for the text fields, wheel for the page) |
+| `--click X,Y` `--drag-to X,Y` | press / release the left button at a position through the real mouse path |
+| `--anim` `--anim-hold P` `--shot-ms N` | keep animations on in a `--dump` / `--screenshot` run, freeze the sliding panels at P %, take the screenshot after N ms |
+| `--clip-in TEXT` | what Ctrl+V pastes in a `--no-browser` run |
 | `--act-late` `--ctx-late` `--hold` | the same, driven by a fake player page |
 | `--dump` | print the app state as `key=value` lines |
 | `--screenshot FILE.bmp` | save the frame and exit |

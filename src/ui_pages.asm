@@ -4,15 +4,10 @@ section .bss
 pg_x:           resd 1                  ; content origin for the page being painted
 pg_y:           resd 1                  ; first y (already offset by the scroll position)
 pg_w:           resd 1
-edit_want:      resd 1                  ; bit 0: search box wanted, bit 1: client-id box wanted
 edit_sx:        resd 1
 edit_sy:        resd 1
 edit_sw:        resd 1
 edit_sh:        resd 1
-edit_cx:        resd 1
-edit_cy:        resd 1
-edit_cw:        resd 1
-edit_ch:        resd 1
 det_title:      resq 1                  ; UTF-16, owned
 det_sub:        resq 1
 det_img:        resq 1                  ; UTF-8, owned
@@ -303,8 +298,19 @@ PROC page_search, 4
         S       16
         sub     ecx, eax
         mov     [edit_sw], ecx
-        or      dword [edit_want], 1
         HIT     dword [pg_x], r12d, ebx, r13d, H_SEARCHBOX, 0
+        mov     eax, [pg_x]
+        mov     [fld_frame], eax
+        mov     [fld_frame+4], r12d
+        mov     [fld_frame+8], ebx
+        mov     [fld_frame+12], r13d
+        xor     ecx, ecx                        ; FLD_SEARCH: drawn after the box so its own hit rectangle wins
+        mov     edx, [edit_sx]
+        mov     r8d, [edit_sy]
+        mov     r9d, [edit_sw]
+        mov     eax, [edit_sh]
+        mov     outarg(5), rax
+        call    field_draw
         add     r12d, r13d
         S       28
         add     r12d, eax
@@ -730,36 +736,34 @@ PROC draw_edit_frame, 4
         mov     r9d, dword loc(3)
         sub     r9d, r13d
         sub     r9d, r13d                       ; edit h
-        mov     eax, stk5
+        mov     eax, dword loc(0)               ; the frame this field sits in
+        mov     [fld_frame], eax
+        mov     eax, dword loc(1)
+        mov     [fld_frame+4], eax
+        mov     eax, dword loc(2)
+        mov     [fld_frame+8], eax
+        mov     eax, dword loc(3)
+        mov     [fld_frame+12], eax
+        mov     eax, stk5                       ; which field: 1 client id, 2 port, 4 dialog name, 5 dialog description
+        mov     r10d, FLD_CLIENT
         cmp     eax, 2
-        je      .port
-        cmp     eax, 4
-        je      .dn
-        cmp     eax, 5
-        je      .dd
-        mov     [edit_cx], ecx
-        mov     [edit_cy], edx
-        mov     [edit_cw], r8d
-        mov     [edit_ch], r9d
-        or      dword [edit_want], 2
-        jmp     .out
-.port:  mov     [edit_px], ecx
-        mov     [edit_py], edx
-        mov     [edit_pw], r8d
-        mov     [edit_ph], r9d
-        or      dword [edit_want], 4
-        jmp     .out
-.dn:    mov     [edit_dnx], ecx
-        mov     [edit_dnx+4], edx
-        mov     [edit_dnx+8], r8d
-        mov     [edit_dnx+12], r9d
-        or      dword [edit_want], 8
-        jmp     .out
-.dd:    mov     [edit_ddx], ecx
-        mov     [edit_ddx+4], edx
-        mov     [edit_ddx+8], r8d
-        mov     [edit_ddx+12], r9d
-        or      dword [edit_want], 16
+        jne     .k4
+        mov     r10d, FLD_PORT
+        jmp     .go
+.k4:    cmp     eax, 4
+        jne     .k5
+        mov     r10d, FLD_DNAME
+        jmp     .go
+.k5:    cmp     eax, 5
+        jne     .go
+        mov     r10d, FLD_DDESC
+.go:    mov     eax, r9d
+        mov     outarg(5), rax
+        mov     r9d, r8d
+        mov     r8d, edx
+        mov     edx, ecx
+        mov     ecx, r10d
+        call    field_draw
 .out:   EPROC
 
 ; The redirect URI in a box with a Copy button.  ecx = x, edx = y, r8d = w -> eax = y below

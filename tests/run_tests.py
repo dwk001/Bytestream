@@ -23,6 +23,7 @@ H_COPY_URI, H_OPEN_DASH, H_BANNER_X = 28, 29, 30
 H_OPEN_LOG, H_COPY_DIAG, H_CANCEL_SIGNIN = 32, 33, 34
 H_TEST_AUDIO, H_LIKE, H_MENU_ITEM, H_MENU_BG = 36, 37, 38, 39
 H_NEW_PL, H_DET_EDIT, H_DET_DELETE, H_DLG_BG, H_DLG_OK, H_DLG_CANCEL, H_DLG_PUBLIC = 40, 41, 42, 43, 44, 45, 46
+H_FIELD = 47
 SRC_SEARCH_R = 9
 H_QUEUE_ROW = 22
 H_SIGNOUT = 18
@@ -1127,10 +1128,12 @@ def main():
                   "create: name, description and public arrive intact (quotes, backslash and accents escaped)", str(b))
             check(posts[0]["headers"].get("Content-Type") == "application/json", "create: JSON content type")
         check(st.get("playlists") == "11" and st.get("dialog") == "0", "create: the new playlist appears and the dialog closes", str(st))
-        st, reqs = live6(["--act", f"{H_NEW_PL},0", "--dlg-name", "Enter key", "--act", "61440,13"])
+        st, reqs = live6(["--act", f"{H_NEW_PL},0"])
+        check(st.get("dialog") == "1" and st.get("field_focus") == "4", "dialog: opening it puts the keyboard in the name field", str((st.get("dialog"), st.get("field_focus"))))
+        st, reqs = live6(["--act", f"{H_NEW_PL},0", "--dlg-name", "Enter key", "--act", "61459,13"])
         check(len([e for e in reqs if e["method"] == "POST" and e["path"] == "/v1/me/playlists"]) == 1 and st.get("dialog") == "0",
               "dialog: Enter in the name field creates the playlist", str(st))
-        st, reqs = live6(["--act", f"{H_NEW_PL},0", "--dlg-name", "Escaped", "--act", "61440,27"])
+        st, reqs = live6(["--act", f"{H_NEW_PL},0", "--dlg-name", "Escaped", "--act", "61459,27"])
         check(not [e for e in reqs if e["method"] == "POST"] and st.get("dialog") == "0", "dialog: Esc in the name field cancels it", str(st))
         st, reqs = live6(["--act", f"{H_NEW_PL},0", "--dlg-name", "   ", "--act", f"{H_DLG_OK},0"])
         check(not [e for e in reqs if e["method"] == "POST"] and st.get("dialog") == "1", "create: a blank name is refused and the dialog stays open", str(st))
@@ -1217,7 +1220,7 @@ def main():
 
     if ONLY in (None, 'm8'):
         # ---- M8a: animation clock, hover fades, smooth scrolling, sliding panels
-        W = 61441                    # pseudo --act targets: mouse wheel over the page (+1 sidebar, +2 queue); n = notches down, 256 + n = up
+        W = 0xF100                   # pseudo --act targets: mouse wheel over the page (+1 sidebar, +2 queue); n = notches down, 256 + n = up
         base = ["--demo", "--dump", "--page", str(PAGE_LIBRARY), "--tab", "1", "--size", "1100x500"]
         rc, out, st, _ = run(base + ["--act", f"{W},3"])
         check(st.get("scroll_main") == "180" and st.get("scroll_side") == "0",
@@ -1270,6 +1273,124 @@ def main():
             os.remove(path)
         else:
             check(False, "full screen: half-way screenshot taken")
+
+    if ONLY in (None, 'm8'):
+        # ---- M8b: text fields drawn and edited by the program (no EDIT controls)
+        FOC, KEY, CHR, MOUSE = 0xF000, 0xF010, 0xF020, 0xF030          # pseudo --act targets, + field index
+        SHIFT, CTRL = 1 << 16, 2 << 16
+        VK_BACK, VK_TAB, VK_RET, VK_ESC, VK_END, VK_HOME, VK_LEFT, VK_RIGHT, VK_DEL = 8, 9, 13, 27, 35, 36, 37, 39, 46
+
+        def typed(s0, idx=0):
+            return sum([["--act", f"{CHR + idx},{ord(c)}"] for c in s0], [])
+
+        def fld(name, args, expect, idx=0, page="1", extra=None):
+            rc, out, st, _ = run(["--demo", "--dump", "--page", page] + args + (extra or []))
+            bad = [f"{k}: want {v!r} got {st.get(k)!r}" for k, v in expect.items() if st.get(k) != str(v)]
+            check(rc == 0 and not bad, name, "; ".join(bad) + (f" (exit {rc})" if rc else ""))
+            return st
+
+        fld("field: typing puts characters in at the caret", [f"--act", f"{FOC},0"] + typed("Hello"),
+            {"field0": "Hello", "field_caret": 5, "field_anchor": 5, "field_focus": 1})
+        fld("field: Backspace removes the character before the caret", ["--act", f"{FOC},0"] + typed("Hello") + ["--act", f"{KEY},{VK_BACK}"],
+            {"field0": "Hell", "field_caret": 4})
+        fld("field: arrow keys move the caret and typing inserts there",
+            ["--act", f"{FOC},0"] + typed("Hell") + ["--act", f"{KEY},{VK_LEFT}", "--act", f"{KEY},{VK_LEFT}"] + typed("X"),
+            {"field0": "HeXll", "field_caret": 3})
+        fld("field: Home and Delete", ["--act", f"{FOC},0"] + typed("abc") + ["--act", f"{KEY},{VK_HOME}", "--act", f"{KEY},{VK_DEL}"],
+            {"field0": "bc", "field_caret": 0})
+        fld("field: End moves to the end", ["--act", f"{FOC},0"] + typed("abc") + ["--act", f"{KEY},{VK_HOME}", "--act", f"{KEY},{VK_END}"],
+            {"field_caret": 3, "field_anchor": 3})
+        fld("field: Shift+Home selects to the start and typing replaces the selection",
+            ["--act", f"{FOC},0"] + typed("hello world") + ["--act", f"{KEY},{VK_HOME | SHIFT}"] + typed("Z"),
+            {"field0": "Z", "field_caret": 1, "field_anchor": 1})
+        fld("field: Shift+Left extends the selection one character at a time",
+            ["--act", f"{FOC},0"] + typed("abcd") + ["--act", f"{KEY},{VK_LEFT | SHIFT}", "--act", f"{KEY},{VK_LEFT | SHIFT}"],
+            {"field_caret": 2, "field_anchor": 4})
+        fld("field: Left with a selection collapses it to its start",
+            ["--act", f"{FOC},0"] + typed("abcd") + ["--act", f"{KEY},{VK_LEFT | SHIFT}", "--act", f"{KEY},{VK_LEFT | SHIFT}", "--act", f"{KEY},{VK_LEFT}"],
+            {"field_caret": 2, "field_anchor": 2})
+        fld("field: Ctrl+A selects everything and Delete clears it",
+            ["--act", f"{FOC},0"] + typed("some text") + ["--act", f"{KEY},{ord('A') | CTRL}", "--act", f"{KEY},{VK_DEL}"],
+            {"field0": "", "field_caret": 0})
+        fld("field: Ctrl+Left jumps by words", ["--act", f"{FOC},0"] + typed("one two three") + ["--act", f"{KEY},{VK_LEFT | CTRL}", "--act", f"{KEY},{VK_LEFT | CTRL}"],
+            {"field_caret": 4})
+        fld("field: Ctrl+Backspace deletes the word before the caret",
+            ["--act", f"{FOC},0"] + typed("one two three") + ["--act", f"{KEY},{VK_LEFT | CTRL}", "--act", f"{KEY},{VK_LEFT | CTRL}", "--act", f"{KEY},{VK_BACK | CTRL}"],
+            {"field0": "two three", "field_caret": 0})
+        fld("field: Ctrl+Right jumps over the next word", ["--act", f"{FOC},0"] + typed("one two three") + ["--act", f"{KEY},{VK_HOME}", "--act", f"{KEY},{VK_RIGHT | CTRL}"],
+            {"field_caret": 4})
+        fld("field: a surrogate pair is one character for Backspace",
+            ["--act", f"{FOC},0", "--act", f"{CHR},{0xD83C}", "--act", f"{CHR},{0xDFB5}", "--act", f"{KEY},{VK_BACK}"],
+            {"field0": "", "field_caret": 0})
+        fld("field: control characters are not inserted", ["--act", f"{FOC},0", "--act", f"{CHR},9", "--act", f"{CHR},7"] + typed("ok"),
+            {"field0": "ok"})
+        fld("field: capacity is enforced (search takes 256 characters)", ["--act", f"{FOC},0"] + typed("a" * 20) + ["--act", f"{KEY},{ord('A') | CTRL}"], {"field_anchor": 0, "field_caret": 20})
+        fld("field: Esc without a dialog gives the keyboard back", ["--act", f"{FOC},0", "--act", f"{KEY},{VK_ESC}"], {"field_focus": 0})
+        fld("field: clicking the search box focuses the field (hit rectangle)", ["--act", f"{H_FIELD},0"], {"field_focus": 1})
+        fld("field: Enter in the search box searches at once",
+            ["--act", f"{FOC},0"] + typed("Lanterns") + ["--act", f"{KEY},{VK_RET}", "--run-ms", "700"], {"field0": "Lanterns"})
+        st = fld("field: ... and the results arrive", ["--act", f"{FOC},0"] + typed("Lanterns") + ["--act", f"{KEY},{VK_RET}", "--run-ms", "700"], {})
+        check(int(st.get("search_tracks", "0")) > 0, "field: Enter ran the demo search", str(st.get("search_tracks")))
+        # mouse: x offsets are from the field's left edge (the text is 14 px; "abcdef" is far wider than 5 px and far narrower than 5000)
+        fld("field: clicking left of the text puts the caret at the start", ["--act", f"{FOC},0"] + typed("abcdef") + ["--act", f"{MOUSE},0"],
+            {"field_caret": 0, "field_anchor": 0})
+        fld("field: clicking far right of the text puts the caret at the end", ["--act", f"{FOC},0"] + typed("abcdef") + ["--act", f"{KEY},{VK_HOME}", "--act", f"{MOUSE},3000"],
+            {"field_caret": 6, "field_anchor": 6})
+        fld("field: Shift+click extends the selection from the old caret",
+            ["--act", f"{FOC},0"] + typed("abcdef") + ["--act", f"{MOUSE},{1 << 16}"], {"field_caret": 0, "field_anchor": 6})
+        fld("field: clicking in the middle lands between letters",
+            ["--act", f"{FOC},0"] + typed("abcdef") + ["--act", f"{MOUSE},40"], {})
+        rc, out, st, _ = run(["--demo", "--dump", "--page", "1", "--act", f"{FOC},0"] + typed("abcdef") + ["--act", f"{MOUSE},40"])
+        check(1 <= int(st.get("field_caret", "0")) <= 5, "field: a click inside the text puts the caret between two letters", str(st.get("field_caret")))
+        # clipboard (test runs print instead of using it, and read --clip-in)
+        rc, out, st, _ = run(["--demo", "--dump", "--no-browser", "--page", "1", "--act", f"{FOC},0"] + typed("hello world") +
+                             ["--act", f"{KEY},{VK_LEFT | SHIFT}"] * 5 + ["--act", f"{KEY},{ord('C') | CTRL}"])
+        check("clipboard:world" in out and st.get("field0") == "hello world", "clipboard: Ctrl+C copies the selection", out[-200:])
+        rc, out, st, _ = run(["--demo", "--dump", "--no-browser", "--page", "1", "--act", f"{FOC},0"] + typed("hello world") +
+                             ["--act", f"{KEY},{VK_LEFT | SHIFT}"] * 5 + ["--act", f"{KEY},{ord('X') | CTRL}"])
+        check("clipboard:world" in out and st.get("field0") == "hello" and st.get("field_caret") == "6",
+              "clipboard: Ctrl+X cuts it (what is left is 'hello ': the harness trims values)", out[-200:] + str((st.get("field0"), st.get("field_caret"))))
+        rc, out, st, _ = run(["--demo", "--dump", "--no-browser", "--clip-in", "pasted text", "--page", "1", "--act", f"{FOC},0"] + typed("ab") +
+                             ["--act", f"{KEY},{VK_LEFT}", "--act", f"{KEY},{ord('V') | CTRL}"])
+        check(st.get("field0") == "apasted textb" and st.get("field_caret") == "12", "clipboard: Ctrl+V pastes at the caret", str((st.get("field0"), st.get("field_caret"))))
+        rc, out, st, _ = run(["--demo", "--dump", "--no-browser", "--clip-in", "x" * 400, "--page", "1", "--act", f"{FOC},0", "--act", f"{KEY},{ord('V') | CTRL}"])
+        check(len(st.get("field0", "")) == 256, "clipboard: a paste stops at the field's capacity", str(len(st.get("field0", ""))))
+        # port field: digits only, five at most, saved
+        rc, out, st, _ = run(["--dump"] + typed("1a2b3c4d5e6f7", 2) + ["--act", f"{FOC + 2},0"] if False else ["--dump", "--type-port", "8989"] + typed("77", 2))
+        check(st.get("field2") == "898977"[:5] or st.get("field2") == "89897", "port field: five characters at most", str(st.get("field2")))
+        rc, out, st, _ = run(["--dump", "--type-port", ""] + typed("1a2b3c", 2))
+        check(st.get("field2") == "123" and st.get("port") == "8989", "port field: only digits are accepted (1024..65535 is checked on save)", str((st.get("field2"), st.get("port"))))
+        rc, out, st, _ = run(["--dump", "--type-port", ""] + typed("20000", 2))
+        check(st.get("port") == "20000", "port field: a valid port is stored", str(st.get("port")))
+        # the real mouse path (press, drag, release go through ui_mouse_down / move / up)
+        rc, out, st, _ = run(["--demo", "--dump", "--page", "1", "--act", f"{FOC},0"] + typed("abcdef") + ["--click", "330,116"])
+        check(st.get("field_focus") == "1" and 1 <= int(st.get("field_caret", "0")) <= 5 and st.get("field_caret") == st.get("field_anchor"),
+              "mouse: clicking in the text puts the caret there", str((st.get("field_caret"), st.get("field_anchor"))))
+        rc, out, st, _ = run(["--demo", "--dump", "--page", "1", "--act", f"{FOC},0"] + typed("abcdef") + ["--click", "318,116", "--drag-to", "420,116"])
+        check(int(st.get("field_caret", "0")) == 6 and 0 <= int(st.get("field_anchor", "9")) < 6,
+              "mouse: dragging selects from where the button went down to where it is released", str((st.get("field_caret"), st.get("field_anchor"))))
+        rc, out, st, _ = run(["--demo", "--dump", "--page", "1", "--click", "700,116"])
+        check(st.get("field_focus") == "1", "mouse: a click on the search pill outside the text focuses the field", str(st.get("field_focus")))
+        rc, out, st, _ = run(["--demo", "--dump", "--page", "1", "--act", f"{FOC},0"] + typed("abc") + ["--click", "700,500"])
+        check(st.get("field_focus") == "0" and st.get("field0") == "abc", "mouse: a click anywhere else takes the keyboard away and keeps the text", str(st.get("field_focus")))
+        # tab order on the sign-in page: client id, then port
+        rc, out, st, _ = run(["--dump", "--act", f"{FOC + 1},0", "--act", f"{KEY + 1},{VK_TAB}"])
+        check(st.get("field_focus") == "3", "Tab moves from the client id to the port field", str(st.get("field_focus")))
+        rc, out, st, _ = run(["--dump", "--act", f"{FOC + 2},0", "--act", f"{KEY + 2},{VK_TAB | SHIFT}"])
+        check(st.get("field_focus") == "2", "Shift+Tab moves back", str(st.get("field_focus")))
+        rc, out, st, _ = run(["--dump", "--type-client", "  abc123  "])
+        check(st.get("client_id") == "abc123", "client id: blanks around it are not stored", str(st.get("client_id")))
+        # the keyboard shortcuts do not fire while typing: 'f' must not toggle full screen, Space must not pause
+        rc, out, st, _ = run(["--demo", "--dump", "--play", "--page", "1", "--act", f"{FOC},0"] + typed("f n p") + ["--act", f"{KEY},{ord(' ')}"])
+        check(st.get("fullscreen") == "0" and st.get("paused") == "0", "typing 'f n p' and Space does not trigger the player shortcuts", str((st.get("fullscreen"), st.get("paused"))))
+        # drawing: text shows up in the frame, and an empty box shows the hint
+        rc, out, st, path = run(["--demo", "--dump", "--page", "1", "--size", "1100x700"] + ["--act", f"{FOC},0"] + typed("Hello"), shot=True)
+        if path and os.path.exists(path):
+            cols = {pixel(path, x, y) for x in range(300, 380, 2) for y in range(108, 126)}
+            check(len(cols) >= 4, "drawing: the typed text is painted inside the search box", str(len(cols)))
+            os.remove(path)
+        else:
+            check(False, "drawing: screenshot with typed text")
 
     # ---- the harness itself must fail loudly when a target is absent
     rc, out, st, _ = run(["--demo", "--act", "99,0"])

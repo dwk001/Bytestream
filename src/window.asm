@@ -8,15 +8,6 @@ extern TrackMouseEvent, GetDC, ReleaseDC, SendMessageW, AdjustWindowRectEx, GetM
 extern CreateCompatibleDC, CreateDIBSection, SelectObject, DeleteObject, DeleteDC, BitBlt, GdiFlush
 extern GdipCreateFromHDC, CreateFileW, CloseHandle, WriteFile
 
-%define ID_EDIT_SEARCH   101
-%define ID_EDIT_CLIENT   102
-%define ID_EDIT_PORT     103
-%define ID_EDIT_DN       104
-%define ID_EDIT_DD       105
-%define TIMER_TICK       1
-%define TIMER_SEARCH     2
-%define EN_CHANGE        0x0300
-%define WM_SETFONT       0x0030
 
 section .bss
 hwnd:           resq 1
@@ -56,8 +47,6 @@ rc_buf:         resb 16
 tme_buf:        resb 24
                 align 8
 bmi_buf:        resb 48
-edit_last:      resd 20                 ; last rectangle given to each EDIT (x y w h) x5
-edit_vis:       resd 5
                 align 8
 edit_text:      resw 200
                 align 8
@@ -76,7 +65,6 @@ ZSTR l_w_size, "window: outer width "
 ZSTR l_w_size2, "window: outer height "
 WSTR cls_name, "ByteStreamWindow"
 WSTR win_title, "ByteStream"
-WSTR cls_edit, "EDIT"
 WSTR face_name, "Segoe UI"
 WSTR empty_w, ""
 
@@ -173,11 +161,11 @@ PROC render_frame, 2
         jmp     .out
 .full:  inc     dword [paints_full]
         call    anim_step
+        call    field_begin_frame
         mov     eax, [bb_w]
         mov     [ui_w], eax
         mov     eax, [bb_h]
         mov     [ui_h], eax
-        mov     dword [edit_want], 0
         call    hit_reset
         call    lay_compute
         SETCOL  T_BG
@@ -215,238 +203,14 @@ PROC render_frame, 2
         call    paint_menu
         call    paint_dialog
         call    paint_toast
+        call    field_end_frame
         call    anim_frame_end
         mov     dword [frame_valid], 1
         call    like_flush                      ; hearts painted this frame that need an answer go out as one request
 .out:   EPROC
 
-; Moves / shows / hides the native EDIT controls to match what the current page asked for.
-PROC sync_edits, 0
-        cmp     dword [dlg_kind], 0
-        je      .nodlg
-        and     dword [edit_want], 0x18         ; a dialog is open: only its own fields may show
-.nodlg: ; search box
-        mov     eax, [edit_want]
-        and     eax, 1
-        mov     edx, [edit_sx]
-        mov     r8d, [edit_sy]
-        mov     r9d, [edit_sw]
-        mov     ecx, [edit_sh]
-        cmp     dword [fullscreen], 0
-        je      .s1
-        xor     eax, eax
-.s1:    mov     rbx, [edit_search]
-        lea     rsi, [edit_last]
-        lea     rdi, [edit_vis]
-        call    place_edit
-        mov     eax, [edit_want]
-        shr     eax, 1
-        and     eax, 1
-        mov     edx, [edit_cx]
-        mov     r8d, [edit_cy]
-        mov     r9d, [edit_cw]
-        mov     ecx, [edit_ch]
-        mov     rbx, [edit_client]
-        lea     rsi, [edit_last+16]
-        lea     rdi, [edit_vis+4]
-        call    place_edit
-        mov     eax, [edit_want]
-        shr     eax, 2
-        and     eax, 1
-        mov     edx, [edit_px]
-        mov     r8d, [edit_py]
-        mov     r9d, [edit_pw]
-        mov     ecx, [edit_ph]
-        mov     rbx, [edit_port]
-        lea     rsi, [edit_last+32]
-        lea     rdi, [edit_vis+8]
-        call    place_edit
-        mov     eax, [edit_want]
-        shr     eax, 3
-        and     eax, 1
-        mov     edx, [edit_dnx]
-        mov     r8d, [edit_dnx+4]
-        mov     r9d, [edit_dnx+8]
-        mov     ecx, [edit_dnx+12]
-        mov     rbx, [edit_dn]
-        lea     rsi, [edit_last+48]
-        lea     rdi, [edit_vis+12]
-        call    place_edit
-        mov     eax, [edit_want]
-        shr     eax, 4
-        and     eax, 1
-        mov     edx, [edit_ddx]
-        mov     r8d, [edit_ddx+4]
-        mov     r9d, [edit_ddx+8]
-        mov     ecx, [edit_ddx+12]
-        mov     rbx, [edit_dd]
-        lea     rsi, [edit_last+64]
-        lea     rdi, [edit_vis+16]
-        call    place_edit
-        cmp     dword [focus_req], 0
-        je      .out
-        cmp     dword [focus_req], 4
-        jne     .f1
-        mov     rcx, [edit_dn]
-        call    SetFocus
-        jmp     .done
-.f1:    cmp     dword [focus_req], 1
-        jne     .cl
-        mov     rcx, [edit_search]
-        call    SetFocus
-        jmp     .done
-.cl:    mov     rcx, [edit_client]
-        cmp     dword [focus_req], 3
-        jne     .cl2
-        mov     rcx, [edit_port]
-.cl2:   call    SetFocus
-.done:  mov     dword [focus_req], 0
-.out:   EPROC
-
-; eax = want visible, edx/r8d/r9d/ecx = x/y/w/h, rbx = control, rsi = last rect[4], rdi = visible flag
-PROC place_edit, 2
-        mov     loc(0), rcx
-        mov     loc(1), rdx
-        test    rbx, rbx
-        jz      .out
-        test    eax, eax
-        jz      .hide
-        mov     eax, [rsi]
-        cmp     eax, edx
-        jne     .move
-        mov     eax, [rsi+4]
-        cmp     eax, r8d
-        jne     .move
-        mov     eax, [rsi+8]
-        cmp     eax, r9d
-        jne     .move
-        mov     eax, [rsi+12]
-        cmp     eax, ecx
-        jne     .move
-        cmp     dword [rdi], 0
-        jne     .out
-.move:  mov     [rsi], edx
-        mov     [rsi+4], r8d
-        mov     [rsi+8], r9d
-        mov     [rsi+12], ecx
-        mov     dword [rdi], 1
-        mov     rcx, rbx
-        xor     edx, edx                        ; HWND_TOP
-        mov     r8d, dword loc(1)
-        mov     r9d, [rsi+4]
-        mov     eax, [rsi+8]
-        mov     outarg(5), rax
-        mov     rax, loc(0)
-        mov     outarg(6), rax
-        mov     qword outarg(7), 0x0040         ; SWP_SHOWWINDOW
-        call    SetWindowPos
-        jmp     .out
-.hide:  cmp     dword [rdi], 0
-        je      .out
-        mov     dword [rdi], 0
-        mov     rcx, rbx
-        xor     edx, edx                        ; SW_HIDE
-        call    ShowWindow
-.out:   EPROC
-
-; ---------------------------------------------------------------- native edit controls
-; ecx = control id -> rax = EDIT hwnd
-PROC make_edit, 4
-        mov     loc(0), rcx
-        mov     ecx, 0
-        lea     rdx, [cls_edit]
-        lea     r8, [empty_w]
-        mov     r9d, WS_CHILD | ES_AUTOHSCROLL
-        mov     qword outarg(5), 0
-        mov     qword outarg(6), 0
-        mov     qword outarg(7), 10
-        mov     qword outarg(8), 10
-        mov     rax, [hwnd]
-        mov     outarg(9), rax
-        mov     rax, loc(0)
-        mov     outarg(10), rax
-        mov     rax, [hinst]
-        mov     outarg(11), rax
-        mov     qword outarg(12), 0
-        call    CreateWindowExW
-        mov     loc(1), rax
-        mov     rcx, rax
-        mov     edx, WM_SETFONT
-        mov     r8, [edit_font]
-        mov     r9d, 1
-        call    SendMessageW
-        mov     rax, loc(1)
-        EPROC
-
-PROC ui_make_fonts, 2
-        mov     rcx, [edit_font]
-        test    rcx, rcx
-        jz      .mk
-        call    DeleteObject
-.mk:    lea     rdi, [logfont]
-        mov     ecx, 96
-        xor     eax, eax
-        rep     stosb
-        lea     rdi, [logfont]
-        S       15
-        neg     eax
-        mov     [rdi], eax                      ; lfHeight (negative = pixels)
-        mov     dword [rdi+16], 400             ; lfWeight
-        mov     byte [rdi+23], 1                ; DEFAULT_CHARSET
-        mov     byte [rdi+26], 5                ; CLEARTYPE_QUALITY
-        lea     rsi, [face_name]
-        lea     rdi, [logfont+28]
-        mov     ecx, 9
-        rep     movsw
-        lea     rcx, [logfont]
-        call    CreateFontIndirectW
-        mov     [edit_font], rax
-        ; re-apply to existing controls
-        mov     rcx, [edit_search]
-        test    rcx, rcx
-        jz      .c
-        mov     edx, WM_SETFONT
-        mov     r8, [edit_font]
-        mov     r9d, 1
-        call    SendMessageW
-.c:     mov     rcx, [edit_client]
-        test    rcx, rcx
-        jz      .out
-        mov     edx, WM_SETFONT
-        mov     r8, [edit_font]
-        mov     r9d, 1
-        call    SendMessageW
-        mov     rcx, [edit_dn]
-        test    rcx, rcx
-        jz      .out
-        mov     edx, WM_SETFONT
-        mov     r8, [edit_font]
-        mov     r9d, 1
-        call    SendMessageW
-        mov     rcx, [edit_dd]
-        test    rcx, rcx
-        jz      .out
-        mov     edx, WM_SETFONT
-        mov     r8, [edit_font]
-        mov     r9d, 1
-        call    SendMessageW
-.out:   EPROC
-
-; Rebuilds the colour-dependent GDI objects after a theme change.
+; The colours changed (theme switch): everything is repainted from the tokens, nothing else holds them.
 PROC ui_theme_changed, 0
-        mov     rcx, [edit_brush]
-        test    rcx, rcx
-        jz      .mk
-        call    DeleteObject
-.mk:    mov     ecx, [th+4*T_SURFACE]
-        call    argb_to_cr
-        mov     ecx, eax
-        call    CreateSolidBrush
-        mov     [edit_brush], rax
-        mov     dword [edit_vis], 0
-        mov     dword [edit_vis+4], 0
-        mov     dword [edit_vis+12], 0
-        mov     dword [edit_vis+16], 0
         mov     rcx, [hwnd]
         test    rcx, rcx
         jz      .out
@@ -481,16 +245,18 @@ PROC wndproc, 12
         je      .cursor
         cmp     edx, WM_KEYDOWN
         je      .key
+        cmp     edx, WM_CHAR
+        je      .char
+        cmp     edx, WM_SETFOCUS
+        je      .setfocus
+        cmp     edx, 0x0008                     ; WM_KILLFOCUS
+        je      .killfocus
         cmp     edx, 0x0319                     ; WM_APPCOMMAND: the keyboard's media keys
         je      .appcmd
         cmp     edx, WM_TIMER
         je      .timer
         cmp     edx, WM_SIZE
         je      .size
-        cmp     edx, WM_COMMAND
-        je      .command
-        cmp     edx, WM_CTLCOLOREDIT
-        je      .ctlcolor
         cmp     edx, WM_GETMINMAXINFO
         je      .minmax
         cmp     edx, WM_DPICHANGED
@@ -541,10 +307,6 @@ PROC wndproc, 12
         mov     dword [bar_only], 1
 .fullpaint:
         call    render_frame
-        cmp     dword [bar_only], 0
-        jne     .noedits
-        call    sync_edits
-.noedits:
         call    GdiFlush
         mov     rcx, loc(4)
         xor     edx, edx
@@ -704,9 +466,39 @@ PROC wndproc, 12
         jmp     .one
 
 .key:   mov     rcx, loc(2)
+        call    field_win_key                   ; a focused text field gets the key first
+        test    eax, eax
+        jnz     .keyrep
+        mov     rcx, loc(2)
         call    ui_key
         test    eax, eax
         jz      .zero
+.keyrep:
+        mov     rcx, loc(0)
+        xor     edx, edx
+        xor     r8d, r8d
+        call    InvalidateRect
+        jmp     .zero
+
+.char:  mov     rcx, loc(2)
+        call    field_win_char
+        test    eax, eax
+        jz      .zero
+        mov     rcx, loc(0)
+        xor     edx, edx
+        xor     r8d, r8d
+        call    InvalidateRect
+        jmp     .zero
+
+.setfocus:
+        mov     dword [fld_active], 1           ; the caret shows again
+        mov     rcx, loc(0)
+        xor     edx, edx
+        xor     r8d, r8d
+        call    InvalidateRect
+        jmp     .zero
+.killfocus:
+        mov     dword [fld_active], 0
         mov     rcx, loc(0)
         xor     edx, edx
         xor     r8d, r8d
@@ -744,6 +536,8 @@ PROC wndproc, 12
         je      .search_timer
         cmp     eax, TIMER_ANIM
         je      .tkall                          ; an animation frame: repaint everything
+        cmp     eax, TIMER_CARET
+        je      .tkall                          ; the caret blinks
         cmp     dword [cli_run_ms], 0           ; tests: --run-ms N lets the app run N ms, then dumps its state and exits
         je      .norun
         call    GetTickCount64
@@ -818,58 +612,11 @@ PROC wndproc, 12
         jz      .zero
         inc     dword [size_calls]
         call    bb_create
-        mov     dword [edit_vis], 0
-        mov     dword [edit_vis+4], 0
         mov     rcx, loc(0)
         xor     edx, edx
         xor     r8d, r8d
         call    InvalidateRect
         jmp     .zero
-
-.command:
-        mov     rax, loc(2)
-        mov     rcx, rax
-        shr     rcx, 16
-        cmp     ecx, EN_CHANGE
-        jne     .zero
-        movzx   eax, ax
-        cmp     eax, ID_EDIT_CLIENT
-        je      .client_changed
-        cmp     eax, ID_EDIT_PORT
-        je      .port_changed
-        cmp     eax, ID_EDIT_SEARCH
-        jne     .zero
-        mov     rcx, [edit_search]
-        lea     rdx, [search_buf]
-        mov     r8d, 256
-        call    GetWindowTextW
-        mov     rcx, loc(0)
-        mov     edx, TIMER_SEARCH
-        mov     r8d, 350
-        xor     r9d, r9d
-        call    SetTimer
-        jmp     .zero
-
-.client_changed:
-        call    on_client_changed
-        jmp     .zero
-.port_changed:
-        call    on_port_changed
-        jmp     .zero
-
-.ctlcolor:
-        mov     ecx, [th+4*T_FG]
-        call    argb_to_cr
-        mov     rcx, loc(2)
-        mov     edx, eax
-        call    SetTextColor
-        mov     ecx, [th+4*T_SURFACE]
-        call    argb_to_cr
-        mov     rcx, loc(2)
-        mov     edx, eax
-        call    SetBkColor
-        mov     rax, [edit_brush]
-        jmp     .out
 
 .minmax:
         S       900
@@ -898,7 +645,6 @@ PROC wndproc, 12
         call    ui_metrics
         mov     ecx, dword loc(4)
         call    gfx_set_scale
-        call    ui_make_fonts
         mov     rax, loc(3)                     ; suggested window rectangle
         mov     r8d, [rax]
         mov     r9d, [rax+4]
@@ -937,7 +683,7 @@ PROC ui_run_search, 0
         jz      .out
         lea     rdx, [search_buf]
         mov     r8d, 256
-        call    GetWindowTextW
+        call    field_get_text
         lea     rcx, [search_buf]
         cmp     dword [g_demo], 0
         je      .real
@@ -1113,7 +859,7 @@ PROC on_client_changed, 2
         mov     rcx, [edit_client]
         lea     rdx, [edit_text]
         mov     r8d, 190
-        call    GetWindowTextW
+        call    field_get_text
         lea     rcx, [edit_text]
         mov     rdx, -1
         call    w_to_u8
@@ -1153,7 +899,7 @@ PROC on_port_changed, 2
         mov     rcx, [edit_port]
         lea     rdx, [edit_text]
         mov     r8d, 12
-        call    GetWindowTextW
+        call    field_get_text
         lea     rcx, [edit_text]
         call    w_atoi
         cmp     eax, 1024
@@ -1174,7 +920,7 @@ PROC edit_fill_from_settings, 4
         mov     loc(0), rax
         mov     rcx, [edit_client]
         mov     rdx, rax
-        call    SetWindowTextW
+        call    field_set_text
         mov     rcx, loc(0)
         call    mem_free
         lea     rcx, [edit_text]
@@ -1183,7 +929,7 @@ PROC edit_fill_from_settings, 4
         mov     word [rax], 0
         mov     rcx, [edit_port]
         lea     rdx, [edit_text]
-        call    SetWindowTextW
+        call    field_set_text
         mov     dword [edit_syncing], 0
         call    redir_refresh
         EPROC

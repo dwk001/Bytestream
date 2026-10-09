@@ -21,7 +21,7 @@ IMPORTS = {
         GetClientRect GetWindowRect IsWindowVisible LoadCursorW SetCursor GetDC ReleaseDC SetTimer KillTimer MoveWindow DestroyWindow
         SetWindowTextW GetWindowTextW SetFocus GetFocus GetKeyState AdjustWindowRectEx TrackMouseEvent SetProcessDPIAware
         GetDpiForWindow GetDpiForSystem GetSystemMetrics ScreenToClient ClientToScreen SetCapture ReleaseCapture MessageBoxW
-        PeekMessageW FindWindowW SetForegroundWindow OpenClipboard EmptyClipboard SetClipboardData CloseClipboard GetWindowLongPtrW SetWindowLongPtrW IsWindow SetWindowPos EnableWindow CallWindowProcW""",
+        PeekMessageW FindWindowW SetForegroundWindow OpenClipboard EmptyClipboard SetClipboardData CloseClipboard GetClipboardData GetWindowLongPtrW SetWindowLongPtrW IsWindow SetWindowPos EnableWindow CallWindowProcW""",
     "gdi32": """CreateCompatibleDC CreateDIBSection SelectObject DeleteObject DeleteDC BitBlt GdiFlush SetBkColor SetTextColor
         CreateSolidBrush CreateFontW CreateFontIndirectW""",
     "gdiplus": """GdiplusStartup GdiplusShutdown GdipCreateFromHDC GdipDeleteGraphics GdipSetSmoothingMode
@@ -34,7 +34,7 @@ IMPORTS = {
         GdipDrawString GdipMeasureString GdipCreateBitmapFromStream GdipCreateBitmapFromScan0 GdipDisposeImage
         GdipDrawImageRectI GdipGetImageWidth GdipGetImageHeight GdipGetImageGraphicsContext GdipBitmapGetPixel
         GdipSetClipRectI GdipResetClip GdipGraphicsClear GdipFillRectangle GdipSetCompositingQuality
-        GdipSetPixelOffsetMode GdipCreateLineBrushI GdipDeleteBrush GdipSetLineLinearBlend GdipFillPie GdipResetWorldTransform GdipTranslateWorldTransform GdipFillPieI
+        GdipSetPixelOffsetMode GdipCreateLineBrushI GdipDeleteBrush GdipSetLineLinearBlend GdipFillPie GdipStringFormatGetGenericTypographic GdipCloneStringFormat GdipResetWorldTransform GdipTranslateWorldTransform GdipFillPieI
         GdipSetClipPath GdipSetLineColors GdipSetPenLineJoin GdipSetPenWidth GdipSetCompositingMode""",
     "shell32": """CommandLineToArgvW ShellExecuteW SHGetFolderPathW SHCreateDirectoryExW""",
     "shlwapi": """SHCreateMemStream""",

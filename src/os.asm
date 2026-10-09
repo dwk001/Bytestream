@@ -1,11 +1,13 @@
 ; os.asm - thin OS helpers the GUI calls: open a link in the browser, copy text to the clipboard.
 ; With --no-browser (developer/test flag) nothing is launched; the intended action is printed instead.
 
-extern ShellExecuteW, OpenClipboard, EmptyClipboard, SetClipboardData, CloseClipboard
+extern ShellExecuteW, OpenClipboard, EmptyClipboard, SetClipboardData, CloseClipboard, GetClipboardData
 extern GlobalAlloc, GlobalLock, GlobalUnlock
 
 section .bss
 cli_no_shell:   resd 1
+                align 8
+cli_clip_in:    resq 1                  ; --clip-in TEXT: what "the clipboard" holds in a --no-browser run
 
 section .data
 WSTR w_verb_open, "open"
@@ -87,4 +89,38 @@ PROC os_clipboard, 4
         call    CloseClipboard
 .free:  mov     rcx, loc(1)
         call    mem_free
+.out:   EPROC
+
+; -> rax = a heap copy (UTF-16) of the clipboard's text, or 0.  --no-browser runs read --clip-in instead.
+PROC os_clipboard_get, 4
+        cmp     dword [cli_no_shell], 0
+        je      .real
+        mov     rcx, [cli_clip_in]
+        test    rcx, rcx
+        jz      .none
+        call    w_dup
+        jmp     .out
+.real:  mov     rcx, [hwnd]
+        call    OpenClipboard
+        test    eax, eax
+        jz      .none
+        mov     ecx, 13                         ; CF_UNICODETEXT
+        call    GetClipboardData
+        test    rax, rax
+        jz      .close
+        mov     loc(0), rax
+        mov     rcx, rax
+        call    GlobalLock
+        test    rax, rax
+        jz      .close
+        mov     rcx, rax
+        call    w_dup
+        mov     loc(1), rax
+        mov     rcx, loc(0)
+        call    GlobalUnlock
+        call    CloseClipboard
+        mov     rax, loc(1)
+        jmp     .out
+.close: call    CloseClipboard
+.none:  xor     eax, eax
 .out:   EPROC

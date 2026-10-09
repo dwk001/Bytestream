@@ -29,6 +29,7 @@ text_begin:
 %include "localsrv.asm"
 %include "audio.asm"
 %include "ui_widgets.asm"
+%include "field.asm"
 %include "library.asm"
 %include "like.asm"
 %include "playlist.asm"
@@ -81,8 +82,8 @@ cli_http_meth:  resq 1
 cli_http_body:  resq 1
 cli_nact:       resd 1
 cli_ready:      resd 1                  ; set once scripted actions are done (screenshot may be taken)
-cli_act_id:     resd 16                 ; bit 16 = --act-late (waits for the player page), bit 17 = already run
-cli_act_arg:    resd 16
+cli_act_id:     resd 96                 ; bit 16 = --act-late (waits for the player page), bit 17 = already run
+cli_act_arg:    resd 96
                 align 8
 dump_buf:       resb 4096
 cli_run_ms:     resd 1                  ; --run-ms N: keep running N ms after the scripted actions, then dump and exit
@@ -90,10 +91,16 @@ run_t0:         resq 1
 cli_dlg_name:    resq 1                  ; --dlg-name / --dlg-desc: text that appears in the dialog fields when it opens (tests)
 cli_dlg_desc:    resq 1
 cli_anim:       resd 1                  ; --anim
+cli_click:      resd 1
+cli_cx:         resd 1
+cli_cy:         resd 1
+cli_drag:       resd 1
+cli_dx:         resd 1
+cli_dy:         resd 1
 cli_anim_hold:  resd 1
 cli_shot_ms:    resd 1                  ; --shot-ms N
 cli_hold:       resd 1                  ; --hold: with --dump, keep running until the player page posts "quit"
-dump_tmp:       resd 1
+dump_tmp:       resd 4
 
 section .data
 WSTR a_selftest, "--selftest"
@@ -121,6 +128,9 @@ WSTR a_imgb, "--img-budget"
 WSTR a_nobrowser, "--no-browser"
 WSTR a_hold, "--hold"
 WSTR a_anim, "--anim"
+WSTR a_click, "--click"
+WSTR a_dragto, "--drag-to"
+WSTR a_clipin, "--clip-in"
 WSTR a_animhold, "--anim-hold"
 WSTR a_shotms, "--shot-ms"
 WSTR a_runms, "--run-ms"
@@ -188,6 +198,11 @@ ZSTR d_q0, "queue_first="
 ZSTR d_saved, "saved_count="
 ZSTR d_notsaved, "not_saved_count="
 ZSTR d_asked, "asked_count="
+ZSTR d_ffocus, "field_focus="
+ZSTR d_fcaret, "field_caret="
+ZSTR d_fanch, "field_anchor="
+ZSTR d_fscroll, "field_scroll="
+ZSTR d_ftext, "field"
 ZSTR d_afr, "anim_frames="
 ZSTR d_aon, "anim_on="
 ZSTR d_abusy, "anim_busy="
@@ -609,11 +624,43 @@ PROC parse_cli, 4
         mov     [cli_shot_ms], eax              ; --shot-ms N: take the screenshot N ms after start (animations mid-way)
         inc     qword loc(2)
         jmp     .next
+.b16j:  mov     rcx, rbx
+        lea     rdx, [a_click]
+        call    arg_is
+        test    eax, eax
+        jz      .b16k
+        mov     rcx, rsi
+        call    w_pair
+        mov     [cli_cx], eax                   ; --click X,Y: press and release the left button there (real mouse path)
+        mov     [cli_cy], edx
+        mov     dword [cli_click], 1
+        inc     qword loc(2)
+        jmp     .next
+.b16k:  mov     rcx, rbx
+        lea     rdx, [a_dragto]
+        call    arg_is
+        test    eax, eax
+        jz      .b17
+        mov     rcx, rsi
+        call    w_pair
+        mov     [cli_dx], eax                   ; --drag-to X,Y: ... and release it there instead (after moving there)
+        mov     [cli_dy], edx
+        mov     dword [cli_drag], 1
+        inc     qword loc(2)
+        jmp     .next
+.b16i:  mov     rcx, rbx
+        lea     rdx, [a_clipin]
+        call    arg_is
+        test    eax, eax
+        jz      .b16j
+        mov     [cli_clip_in], rsi              ; --clip-in TEXT: the clipboard content seen by a field's paste in a --no-browser run
+        inc     qword loc(2)
+        jmp     .next
 .b16h:  mov     rcx, rbx
         lea     rdx, [a_animhold]
         call    arg_is
         test    eax, eax
-        jz      .b17
+        jz      .b16i
         mov     rcx, rsi
         call    w_atoi
         mov     [cli_anim_hold], eax            ; --anim-hold P: sliding panels frozen P % of the way (screenshots)
@@ -689,7 +736,7 @@ PROC parse_cli, 4
         test    eax, eax
         jz      .next
 .isact: mov     eax, [cli_nact]
-        cmp     eax, 16
+        cmp     eax, 96
         jae     .skipact
         mov     rcx, rsi
         call    w_pair
@@ -731,7 +778,7 @@ PROC apply_cli, 2
         je      .p4                             ; a live search waits until the session is restored
         mov     rcx, [edit_search]
         mov     rdx, [cli_search]
-        call    SetWindowTextW
+        call    field_set_text
         mov     rcx, [cli_search]
         call    app_search_demo
 .p4:    cmp     dword [cli_play], 0
@@ -763,12 +810,12 @@ PROC run_scripted_input, 4
         test    rdx, rdx
         jz      .p
         mov     rcx, [edit_client]
-        call    SetWindowTextW
+        call    field_set_text
 .p:     mov     rdx, [cli_type_port]
         test    rdx, rdx
         jz      .g
         mov     rcx, [edit_port]
-        call    SetWindowTextW
+        call    field_set_text
 .g:     xor     ebx, ebx
         mov     qword loc(1), 0                 ; Buf based at &loc(3)
         mov     qword loc(2), 0
@@ -883,18 +930,58 @@ PROC run_act_at, 2
         call    net_wait_idle                   ; let requests started by earlier actions finish (a page's tracks, say)
         mov     rcx, [hwnd]
         call    UpdateWindow                    ; paint what arrived since the last frame, so the hit list is current
-        cmp     r12d, 0xF000                    ; pseudo target: a key press (code in the argument) in the dialog's name field
-        jne     .real
-        mov     rax, [edit_dn]                  ; the message loop's own check, fed a hand-made WM_KEYDOWN
-        mov     [msg_buf], rax
-        mov     dword [msg_buf+8], 0x0100
-        mov     [msg_buf+16], r13
-        lea     rcx, [msg_buf]
-        call    edit_pretranslate
+        cmp     r12d, 0xF000                    ; pseudo targets: keyboard / text / mouse input to a field (see run_tests.py)
+        jb      .real
+        cmp     r12d, 0xF040
+        jae     .real
+        mov     eax, r12d
+        and     eax, 0x0F                       ; field index
+        mov     r10d, r12d
+        and     r10d, 0xFFF0
+        cmp     r10d, 0xF010
+        je      .fkey
+        cmp     r10d, 0xF020
+        je      .fchr
+        cmp     r10d, 0xF030
+        je      .fmouse
+        mov     ecx, eax                        ; 0xF000 + n: focus field n, caret at the end
+        xor     edx, edx
+        call    field_focus_set
+        jmp     .painted
+.fkey:  mov     ecx, eax                        ; key: low 16 bits = virtual key, bit 16 shift, bit 17 control
+        mov     edx, r13d
+        and     edx, 0xFFFF
+        mov     r8d, r13d
+        shr     r8d, 16
+        and     r8d, 3
+        call    field_key
+        jmp     .painted
+.fchr:  mov     ecx, eax
+        mov     edx, r13d
+        call    field_char
+        jmp     .painted
+.fmouse: mov    esi, eax                        ; click at x = field left + argument (bit 16: extend the selection)
+        lea     eax, [rsi+1]
+        cmp     eax, [fld_focus]
+        je      .fm1
+        mov     ecx, esi
+        xor     edx, edx
+        call    field_focus_set
+.fm1:   lea     r8, [fld_tab]
+        imul    r9d, esi, FL_SIZE
+        mov     edx, [r8+r9+FL_X]
+        mov     eax, r13d
+        and     eax, 0xFFFF
+        add     edx, eax
+        mov     r8d, r13d
+        shr     r8d, 16
+        and     r8d, 1
+        mov     ecx, esi
+        call    field_mouse
         jmp     .painted
 .real:
         mov     eax, r12d
-        sub     eax, 0xF001                     ; pseudo targets 0xF001 / 2 / 3: mouse wheel over the page / sidebar / queue,
+        sub     eax, 0xF100                     ; pseudo targets 0xF100 / 1 / 2: mouse wheel over the page / sidebar / queue,
         cmp     eax, 2                          ; argument n = n notches down, 256 + n = n notches up
         ja      .find0
         mov     ecx, -120
@@ -1111,6 +1198,55 @@ PROC dump_state, 4
         DUMPNUM d_dlgpub, dword [dlg_public]
         DUMPNUM d_menu, dword [menu_open]
         DUMPNUM d_menun, dword [menu_n]
+        mov     eax, [fld_focus]
+        mov     [dump_tmp], eax
+        DUMPNUM d_ffocus, dword [dump_tmp]
+        mov     eax, [fld_focus]
+        test    eax, eax
+        jz      .nofld
+        dec     eax
+        imul    eax, FL_SIZE
+        lea     rcx, [fld_tab]
+        add     rcx, rax
+        mov     eax, [rcx+FL_CARET]
+        mov     [dump_tmp], eax
+        mov     eax, [rcx+FL_ANCH]
+        mov     [dump_tmp+4], eax
+        mov     eax, [rcx+FL_SCROLL]
+        mov     [dump_tmp+8], eax
+        DUMPNUM d_fcaret, dword [dump_tmp]
+        DUMPNUM d_fanch, dword [dump_tmp+4]
+        DUMPNUM d_fscroll, dword [dump_tmp+8]
+.nofld: xor     r12d, r12d                      ; field0=... field4=... (UTF-8)
+.fl:    mov     rcx, rdi
+        lea     rdx, [d_ftext]
+        call    dump_str
+        mov     rdi, rax
+        lea     eax, [r12+'0']
+        mov     [rdi], al
+        mov     byte [rdi+1], '='
+        add     rdi, 2
+        imul    ecx, r12d, FL_SIZE
+        lea     rax, [fld_tab]
+        add     rcx, rax
+        lea     rdx, [dlg_wbuf]
+        mov     r8d, 259
+        call    field_get_text
+        lea     rcx, [dlg_wbuf]
+        mov     rdx, -1
+        call    w_to_u8
+        mov     r13, rax
+        mov     rcx, rdi
+        mov     rdx, rax
+        call    dump_str
+        mov     rdi, rax
+        mov     rcx, r13
+        call    mem_free
+        mov     byte [rdi], 10
+        inc     rdi
+        inc     r12d
+        cmp     r12d, FLD_N
+        jb      .fl
         DUMPNUM d_afr, dword [anim_frames]
         DUMPNUM d_aon, dword [anim_on]
         DUMPNUM d_abusy, dword [anim_busy]
@@ -1405,38 +1541,8 @@ PROC start, 8
         mov     edx, eax
         mov     r8d, dword loc(0)
         call    window_create
-        call    ui_make_fonts
-        mov     ecx, ID_EDIT_SEARCH
-        call    make_edit
-        mov     [edit_search], rax
-        mov     ecx, ID_EDIT_CLIENT
-        call    make_edit
-        mov     [edit_client], rax
-        mov     ecx, ID_EDIT_PORT
-        call    make_edit
-        mov     [edit_port], rax
-        mov     ecx, ID_EDIT_DN
-        call    make_edit
-        mov     [edit_dn], rax
-        mov     ecx, ID_EDIT_DD
-        call    make_edit
-        mov     [edit_dd], rax
+        call    field_init
         call    edit_fill_from_settings
-        mov     rcx, [edit_search]
-        mov     edx, 0x1501                     ; EM_SETCUEBANNER
-        mov     r8d, 1
-        lea     r9, [w_cue_search]
-        call    SendMessageW
-        mov     rcx, [edit_client]
-        mov     edx, 0x1501
-        mov     r8d, 1
-        lea     r9, [w_cue_client]
-        call    SendMessageW
-        mov     rcx, [edit_port]
-        mov     edx, 0x00C5                     ; EM_LIMITTEXT
-        mov     r8d, 5
-        xor     r9d, r9d
-        call    SendMessageW
         call    auth_init
         cmp     dword [cli_demo], 0
         je      .login
@@ -1473,10 +1579,38 @@ PROC start, 8
         jne     .nosearch
         mov     rcx, [edit_search]
         mov     rdx, [cli_search]
-        call    SetWindowTextW
+        call    field_set_text
         call    ui_run_search
 .nosearch:
         call    run_acts
+        cmp     dword [cli_click], 0
+        je      .noclick
+        mov     ecx, 4000
+        call    net_wait_idle
+        mov     rcx, [hwnd]
+        call    UpdateWindow
+        mov     ecx, [cli_cx]
+        mov     edx, [cli_cy]
+        call    ui_mouse_down
+        mov     r12d, [cli_cx]
+        mov     r13d, [cli_cy]
+        cmp     dword [cli_drag], 0
+        je      .mup
+        mov     r12d, [cli_dx]
+        mov     r13d, [cli_dy]
+        mov     ecx, r12d
+        mov     edx, r13d
+        call    ui_mouse_move
+.mup:   mov     ecx, r12d
+        mov     edx, r13d
+        call    ui_mouse_up
+        mov     rcx, [hwnd]
+        xor     edx, edx
+        xor     r8d, r8d
+        call    InvalidateRect
+        mov     rcx, [hwnd]
+        call    UpdateWindow
+.noclick:
         mov     ecx, 15000
         call    net_wait_idle
         cmp     dword [cli_wait_auth], 0
@@ -1518,10 +1652,6 @@ PROC start, 8
         call    GetMessageW
         test    eax, eax
         jle     .exit
-        lea     rcx, [msg_buf]
-        call    edit_pretranslate
-        test    eax, eax
-        jnz     .loop
         lea     rcx, [msg_buf]
         call    TranslateMessage
         lea     rcx, [msg_buf]

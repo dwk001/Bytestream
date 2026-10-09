@@ -9,6 +9,8 @@
 
 extern QueryPerformanceCounter, QueryPerformanceFrequency, SetTimer, KillTimer
 
+%define TIMER_TICK      1
+%define TIMER_SEARCH    2
 %define TIMER_ANIM      3
 %define ANIM_FRAME_MS   16
 

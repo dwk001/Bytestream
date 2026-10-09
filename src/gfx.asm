@@ -15,6 +15,7 @@ extern GdipGetImageWidth, GdipGetImageHeight, GdipGetImageGraphicsContext, GdipB
 extern GdipSetClipRectI, GdipResetClip, GdipGraphicsClear, GdipSetPenStartCap, GdipSetPenEndCap
 extern GdipSetPixelOffsetMode, GdipSetCompositingQuality, GdipMeasureString, GdipSetClipPath
 extern GdipFillPie, GdipDrawArcI, GdipCreateLineBrushI, GdipResetWorldTransform, GdipTranslateWorldTransform
+extern GdipStringFormatGetGenericTypographic, GdipCloneStringFormat
 
 %define F_BODY      0
 %define F_BODY_B    1
@@ -33,6 +34,7 @@ g_brush:        resq 1
 g_family:       resq 1
 g_fonts:        resq NFONTS
 g_fmt:          resq 3                  ; left, centre, right
+g_tfmt:         resq 1                  ; typographic: exact advances, trailing blanks counted (text fields)
 g_cur_font:     resd 1
 g_cur_align:    resd 1
 g_cur_color:    resd 1
@@ -83,6 +85,24 @@ PROC gfx_init, 2
         inc     ebx
         cmp     ebx, 3
         jb      .fmt
+        ; typographic format for text fields: advances without GDI+'s side padding, blanks at the end are measured
+        lea     rcx, [g_tfmt]
+        call    GdipStringFormatGetGenericTypographic
+        mov     rcx, [g_tfmt]
+        lea     rdx, [g_tfmt]
+        call    GdipCloneStringFormat           ; our own copy of the shared object
+        mov     rcx, [g_tfmt]
+        mov     edx, 0x7804                     ; NoFitBlackBox | MeasureTrailingSpaces | NoWrap | LineLimit | NoClip
+        call    GdipSetStringFormatFlags
+        mov     rcx, [g_tfmt]
+        xor     edx, edx
+        call    GdipSetStringFormatAlign
+        mov     rcx, [g_tfmt]
+        mov     edx, StringAlignmentCenter
+        call    GdipSetStringFormatLineAlign
+        mov     rcx, [g_tfmt]
+        xor     edx, edx
+        call    GdipSetStringFormatTrimming
         ; font family: Segoe UI, falling back to the generic sans-serif family
         lea     rcx, [gfx_font_name]
         xor     edx, edx
@@ -405,6 +425,66 @@ PROC gfx_text, 2
         mov     rcx, [g_g]
         mov     rdx, r10
         mov     r8d, -1
+        call    GdipDrawString
+        EPROC
+
+; rcx = UTF-16 text, edx = characters -> eax = its width in pixels in the current font, exact (text fields)
+PROC gfx_tw, 10
+        test    edx, edx
+        jz      .zero
+        mov     loc(9), rcx
+        mov     loc(8), rdx
+        mov     qword [rbp-80], 0               ; layout RectF = 0,0,10000,10000
+        mov     dword [rbp-72], 0x461C4000
+        mov     dword [rbp-68], 0x461C4000
+        mov     qword [rbp-96], 0               ; bounding box out at loc(3)
+        mov     qword [rbp-88], 0
+        lea     rax, [g_fonts]
+        mov     ecx, [g_cur_font]
+        mov     r9, [rax+rcx*8]
+        lea     rcx, loc(1)
+        mov     outarg(5), rcx
+        mov     rax, [g_tfmt]
+        mov     outarg(6), rax
+        lea     rcx, loc(3)
+        mov     outarg(7), rcx
+        mov     qword outarg(8), 0
+        mov     qword outarg(9), 0
+        mov     rcx, [g_g]
+        mov     rdx, loc(9)
+        mov     r8d, dword loc(8)
+        call    GdipMeasureString
+        movss   xmm0, [rbp-88]
+        cvtss2si eax, xmm0
+        jmp     .out
+.zero:  xor     eax, eax
+.out:   EPROC
+
+; rcx = UTF-16 text, edx = characters, r8d = x, r9d = y, [rbp+48] = w, [rbp+56] = h: left-aligned, vertically centred,
+; typographic metrics (matches gfx_tw), no ellipsis
+PROC gfx_tdraw, 2
+        mov     loc(0), rcx
+        mov     loc(1), rdx
+        cvtsi2ss xmm0, r8d
+        movss   [rbp-96], xmm0                  ; RectF at rbp-96 (x y w h)
+        cvtsi2ss xmm0, r9d
+        movss   [rbp-92], xmm0
+        cvtsi2ss xmm0, dword stk5
+        movss   [rbp-88], xmm0
+        cvtsi2ss xmm0, dword stk6
+        movss   [rbp-84], xmm0
+        lea     rax, [g_fonts]
+        mov     ecx, [g_cur_font]
+        mov     r9, [rax+rcx*8]
+        lea     rcx, [rbp-96]
+        mov     outarg(5), rcx
+        mov     rax, [g_tfmt]
+        mov     outarg(6), rax
+        mov     rax, [g_brush]
+        mov     outarg(7), rax
+        mov     rcx, [g_g]
+        mov     rdx, loc(0)
+        mov     r8d, dword loc(1)
         call    GdipDrawString
         EPROC
 
