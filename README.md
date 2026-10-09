@@ -6,7 +6,7 @@ assembly, calling Win32 DLLs directly. One `.exe`, about 230 KB.
 
 Features: Home, Search (results as you type), Library (playlists, liked songs, albums), playlist and album pages,
 now-playing bar with seek / volume / shuffle / repeat, queue panel, full-screen view with cover-tinted
-background, three themes, per-monitor DPI scaling, cover art with anti-aliased vector icons and text,
+background, three themes (Dark, Midnight, Light - Sonora's palettes), per-monitor DPI scaling, cover art with anti-aliased vector icons and text,
 heart buttons (save / remove), a right-click menu everywhere (add to queue, play next, add to playlist, copy link,
 open in Spotify ...), playlist create / rename / delete, add and remove tracks, media keys.
 
@@ -36,7 +36,7 @@ if anything misbehaves; the log never contains tokens.
 2. Settings > Diagnostics > **Test audio** should play a short test track (the first start of Edge takes a few
    seconds). If it does not, the banner says why; otherwise *Copy diagnostics* and send them along.
 3. Click a track: it plays, the seek bar moves, pause / next / previous / volume / shuffle / repeat work.
-4. Click a heart (it turns green and the track appears in Liked Songs on Spotify), right-click a track (Add to
+4. Click a heart (it fills in and the track appears in Liked Songs on Spotify), right-click a track (Add to
    queue, Add to playlist ...), press **+** in the sidebar to create a playlist.
 5. Close ByteStream: the helper Edge window disappears with it.
 

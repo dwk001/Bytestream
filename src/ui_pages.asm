@@ -59,6 +59,7 @@ WSTR w_sc5, "Media keys work while ByteStream is focused, and Windows shows what
 WSTR w_about1, "ByteStream for Windows, written in x86-64 assembly."
 WSTR w_about2, "Playback uses the official Spotify Web Playback SDK and needs Spotify Premium."
 WSTR w_about3, "Not affiliated with Spotify. Spotify is a trademark of Spotify AB."
+WSTR w_about5, "Colour themes are Sonora's (GPL-3.0, github.com/sonorahq/sonora), which ByteStream takes its feature set from."
 WSTR w_about4, `Music, metadata and cover art come from Spotify; use "Open in Spotify" in a right-click menu to see any item there.`
 WSTR w_play, "Play"
 WSTR w_cap_playlist, "PLAYLIST"
@@ -1081,6 +1082,8 @@ PROC page_settings, 8
         TXTL    w_about3, dword [pg_x], r12d, dword [pg_w], ebx
         add     r12d, ebx
         TXTL    w_about4, dword [pg_x], r12d, dword [pg_w], ebx
+        add     r12d, ebx
+        TXTL    w_about5, dword [pg_x], r12d, dword [pg_w], ebx
         add     r12d, ebx
         mov     eax, r12d
         call    page_end

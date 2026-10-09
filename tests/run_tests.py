@@ -378,9 +378,9 @@ def main():
                 return True if got == expect else f"bg pixel {got} != {expect}"
             return chk
 
-        flow("theme: dark background is #121212", ["--theme", "0"], {"theme": 0}, shot=True, extra_check=bg((18, 18, 18)))
-        flow("theme: midnight background", ["--theme", "1"], {"theme": 1}, shot=True, extra_check=bg((11, 18, 32)))
-        flow("theme: light background", ["--theme", "2"], {"theme": 2}, shot=True, extra_check=bg((255, 255, 255)))
+        flow("theme: dark background is #0A0A0A", ["--theme", "0"], {"theme": 0}, shot=True, extra_check=bg((10, 10, 10)))
+        flow("theme: midnight background", ["--theme", "1"], {"theme": 1}, shot=True, extra_check=bg((7, 17, 31)))
+        flow("theme: light background", ["--theme", "2"], {"theme": 2}, shot=True, extra_check=bg((250, 250, 250)))
         flow("settings page switches the theme", ["--act", f"{H_NAV},{PAGE_SETTINGS}", "--act", f"{H_THEME},1"], {"theme": 1})
 
         def not_blank(path):
@@ -444,7 +444,7 @@ def main():
         def login_screen(path):
             # the banner strip (theme danger colour, #8b1a1a in the dark theme) spans the top when present
             top = pixel(path, 640, 5)
-            return True if top == (139, 26, 26) else f"banner colour not found at the top: {top}"
+            return True if top == (127, 29, 29) else f"banner colour not found at the top: {top}"
         flow("banner is painted above the login screen", ["--act", f"{H_SIGNIN},0"], {"banner": 1}, shot=True,
              demo=False, extra_check=login_screen)
 
