@@ -39,10 +39,21 @@ jobs:
       - name: Test (runs the real .exe on Windows)
         shell: pwsh
         timeout-minutes: 30
-        run: python tests/run_tests.py
+        run: |
+          python tests/run_tests.py 2>&1 | Tee-Object -FilePath test.log
+          $code = $LASTEXITCODE
+          Write-Host "=== failures ==="
+          Select-String -Path test.log -Pattern '^FAIL' | ForEach-Object { $_.Line.Substring(0, [Math]::Min(1500, $_.Line.Length)) }
+          exit $code
+
+      - name: Stop leftover app processes
+        if: always()
+        shell: pwsh
+        run: Get-Process bytestream -ErrorAction SilentlyContinue | Stop-Process -Force
 
       - name: Render screenshots
         if: always()
+        timeout-minutes: 8
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path shots | Out-Null
@@ -70,3 +81,4 @@ jobs:
             build/bytestream.exe
             build/bytestream.map
             shots/*.png
+            test.log
