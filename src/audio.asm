@@ -765,6 +765,8 @@ PROC h_play, 4
         jmp     .out
 .ok:    lea     rcx, [l_play_ok]
         call    log_msg
+        mov     ecx, 1200
+        call    queue_mark
 .out:   EPROC
 
 section .data
@@ -1149,6 +1151,8 @@ PROC audio_on_state, 8
         call    json_str_u8
         mov     [np_img_s], rax
 .noimg: inc     dword [np_gen]
+        mov     ecx, 700                        ; a new song: what is up next may have changed
+        call    queue_mark
         mov     rcx, [np_title]
         mov     rdx, -1
         call    w_to_u8

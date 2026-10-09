@@ -10,7 +10,7 @@ extern CreateThread, CreateEventW, SetEvent, WaitForSingleObject, Sleep, PostMes
 extern PeekMessageW, GetTickCount64
 
 %define JB_NEXT    0
-%define JB_KIND    8                    ; 0 api, 1 image
+%define JB_KIND    8                    ; queue index: 0 api, 1..3 images (three download workers)
 %define JB_TAG     16
 %define JB_ARG     24
 %define JB_METHOD  32                   ; static UTF-16 verb
@@ -36,12 +36,21 @@ extern PeekMessageW, GetTickCount64
 %define TAG_TOKEN  2                    ; OAuth token endpoint answered (arg 0 = code exchange, 1 = session restore)
 %define TAG_ME     3                    ; GET /v1/me answered: sign-in complete
 %define TAG_PLAY   4                    ; PUT /me/player/play answered
-%define TAG_COUNT  5                    ; grows as handlers are added
+%define TAG_LIST   5                    ; a page of the library (arg = generation << 8 | source)
+%define TAG_DETAIL 6                    ; tracks of the open playlist / album (arg = generation)
+%define TAG_SEARCH 7                    ; search results (arg = generation)
+%define TAG_IMG    8                    ; a cover image (the job URL is the cache key)
+%define TAG_CONTAINS 9                  ; GET /me/library/contains answered (arg = block of hashes)
+%define TAG_SAVE   10                   ; PUT / DELETE /me/library answered
+%define TAG_QUEUE  11                   ; GET /me/player/queue answered
+%define TAG_QADD   12                   ; POST /me/player/queue answered
+%define TAG_COUNT  13                   ; grows as handlers are added
+%define NQ_COUNT   4
 
 section .bss
-nq_head:        resq 2
-nq_tail:        resq 2
-nq_event:       resq 2
+nq_head:        resq NQ_COUNT
+nq_tail:        resq NQ_COUNT
+nq_event:       resq NQ_COUNT
 nq_lock:        resd 1
 net_pending:    resd 1
 net_started:    resd 1
@@ -67,6 +76,14 @@ net_handlers:
         dq h_token
         dq h_me
         dq h_play
+        dq h_list
+        dq h_detail
+        dq h_search
+        dq h_img
+        dq h_contains
+        dq h_save
+        dq h_queue
+        dq h_qadd
 
 section .text
 
@@ -122,7 +139,7 @@ PROC net_init, 2
         mov     qword outarg(6), 0
         call    CreateThread
         inc     ebx
-        cmp     ebx, 2
+        cmp     ebx, NQ_COUNT
         jb      .mk
 .out:   EPROC
 

@@ -414,6 +414,19 @@ PROC paint_fullscreen, 12
         mov     esi, eax
         mov     rcx, [np_artist]
         TXT     rcx, r12d, r13d, r14d, esi
+        S       44
+        mov     r8d, eax                        ; heart box, right-aligned on the artist line
+        mov     ecx, r12d
+        add     ecx, r14d
+        sub     ecx, r8d
+        S       5
+        mov     edx, r13d
+        sub     edx, eax
+        mov     r9d, 0xFFFF0000                 ; the playing track
+        mov     rax, [np_uri]
+        mov     outarg(5), rax
+        mov     qword outarg(6), 1
+        call    draw_heart
         S       40
         add     r13d, eax
         SETFONT F_BODY

@@ -21,7 +21,8 @@ H_QUEUE, H_FULL, H_TAB, H_THEME, H_BACK, H_FS_CLOSE, H_DETAIL_PLAY = 12, 13, 14,
 H_SIGNIN, H_DEMO = 16, 24
 H_COPY_URI, H_OPEN_DASH, H_BANNER_X = 28, 29, 30
 H_OPEN_LOG, H_COPY_DIAG, H_CANCEL_SIGNIN = 32, 33, 34
-H_TEST_AUDIO = 36
+H_TEST_AUDIO, H_LIKE, H_MENU_ITEM, H_MENU_BG = 36, 37, 38, 39
+H_QUEUE_ROW = 22
 H_SIGNOUT = 18
 SRC_RECENT, SRC_LIKED, SRC_PLAYLISTS, SRC_ALBUMS = 1, 2, 5, 6
 PAGE_HOME, PAGE_SEARCH, PAGE_LIBRARY, PAGE_DETAIL, PAGE_SETTINGS, PAGE_LOGIN = range(6)
@@ -495,8 +496,14 @@ def main():
         # ---- milestone 2: loopback server + OAuth PKCE sign-in (against the fake accounts service)
         S = fake_spotify.STATE
 
+        LIBRARY = ("/v1/me/playlists", "/v1/me/tracks", "/v1/me/albums", "/v1/me/player/recently-played", "/v1/me/library/contains",
+                   "/v1/me/player/queue")
+
         def reqs(*paths):
-            return [e["path"].split("?")[0] for e in S.log if not paths or e["path"].split("?")[0] in paths]
+            """Paths requested so far, without the library loads and cover downloads that follow every sign-in."""
+            return [e["path"].split("?")[0] for e in S.log
+                    if (not paths or e["path"].split("?")[0] in paths)
+                    and e["path"].split("?")[0] not in LIBRARY and not e["path"].startswith("/img/")]
 
         S.reset()
         d = tempfile.mkdtemp(prefix="bs-data-")
@@ -533,7 +540,7 @@ def main():
         S.reset(); S.expires_in = 60
         d = tempfile.mkdtemp(prefix="bs-data-")
         st, _, _ = signin(base, d)
-        check(st.get("signed_in") == "1" and reqs() == ["/authorize", "/api/token", "/api/token", "/v1/me"],
+        check(st.get("signed_in") == "1" and reqs()[:4] == ["/authorize", "/api/token", "/api/token", "/v1/me"],
               "refresh: a token about to expire is renewed before the next request", str(reqs()))
         shutil.rmtree(d, ignore_errors=True)
 
@@ -796,6 +803,259 @@ def main():
                 check(l.startswith("ok "), l[3:] if l.startswith("ok ") else l[5:])
         else:
             print("skip player.js tests: node is not installed")
+
+
+    # ---- milestone 4: the live library (lists, paging, playlist/album pages, search, covers) against the fake API
+    if ONLY in (None, 'm4'):
+        S = fake_spotify.STATE
+        S.reset()
+        d = tempfile.mkdtemp(prefix="bs-data-")
+        sport = free_port()
+        st, _, _ = signin(base, d, port=sport)
+        check(st.get("signed_in") == "1", "library: setup - a signed-in session exists", str(st))
+
+        def live(extra, reset=True):
+            """Restores the stored session against the fake API, runs the extras, returns (state, requests)."""
+            if reset:
+                S.log.clear()
+                S.page_limit = None
+                S.real_images = False
+                S.forbidden_playlists = set()
+                S.empty_playlists = set()
+                S.fail_next.clear()
+            st, _, lines = signin(base, d, port=sport, act_signin=False, extra=["--size", "1280x1300"] + extra)
+            paths = [e["path"] for e in S.log]
+            if not st:
+                print("   (no state dumped; output was: %s)" % lines[-12:])
+                try:
+                    print("   log tail:", open(os.path.join(d, "bytestream.log"), encoding="utf-8").read()[-1500:])
+                except OSError:
+                    pass
+            return st, paths
+
+        st, paths = live([])
+        check(st.get("playlists") == "10" and st.get("liked") == "20" and st.get("albums") == "8" and st.get("recent") == "10",
+              "library: every list is filled from its endpoint after sign-in", str(st))
+        for want in ("/v1/me/playlists?limit=50", "/v1/me/tracks?limit=50", "/v1/me/albums?limit=50", "/v1/me/player/recently-played?limit=50"):
+            check(want in paths, "library: requests " + want, str(paths))
+        e = next((e for e in S.log if e["path"].startswith("/v1/me/tracks")), {"headers": {}})
+        check(e["headers"].get("Authorization", "").startswith("Bearer access-"), "library: API calls carry the bearer token")
+
+        st, paths = live([])
+        S.page_limit = 4
+        S.log.clear()
+        st, paths = live(["--act", f"{H_NAV},{PAGE_LIBRARY}", "--act", f"{H_TAB},1"], reset=False)
+        check(st.get("playlists") == "10" and st.get("albums") == "8",
+              "library: playlists and albums follow 'next' until everything is loaded", str(st))
+        pl_pages = [p for p in paths if p.startswith("/v1/me/playlists")][-3:]
+        check(len(pl_pages) == 3 and "offset=8" in pl_pages[-1] and "offset=4" in pl_pages[1], "library: three playlist pages of 4 were requested", str(pl_pages))
+        check(st.get("liked") == "20", "library: the liked-songs tab pulls further pages while the list is short", str(st) + str([p for p in paths if "tracks" in p]))
+
+        st, paths = live([], reset=True)
+        S.page_limit = 4
+        st, paths = live([], reset=False)
+        check(st.get("liked") == "4", "library: liked songs wait for the user to reach them (one page)", str(st))
+
+        st, paths = live(["--act", f"{H_CARD},{arg(SRC_PLAYLISTS, 0)}"])
+        check(st.get("page") == str(PAGE_DETAIL) and st.get("detail_tracks") == "24" and "/v1/playlists/pl000/items?limit=100" in paths,
+              "playlist page: loads /items and lists the tracks", str(st) + str(paths))
+        S.page_limit = 10
+        st, paths = live(["--act", f"{H_CARD},{arg(SRC_PLAYLISTS, 0)}"], reset=False)
+        check(st.get("detail_tracks") == "24", "playlist page: long playlists load their later pages as well", str(st) + str(paths))
+
+        S.forbidden_playlists = {"pl001"}
+        st, paths = live(["--act", f"{H_CARD},{arg(SRC_PLAYLISTS, 1)}"], reset=False)
+        check(st.get("detail_tracks") == "0" and st.get("detail_msg") == "1", "playlist page: a 403 explains that Spotify does not share the tracks", str(st))
+        S.forbidden_playlists = set()
+        S.empty_playlists = {"pl002"}
+        st, paths = live(["--act", f"{H_CARD},{arg(SRC_PLAYLISTS, 2)}"], reset=False)
+        check(st.get("detail_tracks") == "0" and st.get("detail_msg") == "1", "playlist page: tracks announced but not sent also explain themselves", str(st))
+
+        st, paths = live(["--act", f"{H_NAV},{PAGE_LIBRARY}", "--act", f"{H_TAB},2", "--act", f"{H_CARD},{arg(SRC_ALBUMS, 0)}"])
+        check(st.get("page") == str(PAGE_DETAIL) and st.get("detail_tracks") == "9" and any(p.startswith("/v1/albums/") and "/tracks?limit=50" in p for p in paths),
+              "album page: loads /albums/{id}/tracks", str(st) + str(paths))
+
+        st, paths = live(["--page", str(PAGE_SEARCH), "--search", "tide"])
+        check(st.get("search_tracks") == "10" and st.get("search_albums") == "4" and st.get("search_playlists") == "3" and st.get("search_artists") == "4",
+              "search: results fill all four lists (a null playlist entry is skipped)", str(st))
+        check("/v1/search?q=tide&type=track,album,playlist,artist&limit=10" in paths, "search: query, types and the limit of 10", str(paths))
+        st, paths = live(["--page", str(PAGE_SEARCH), "--search", "a&b \u00e9"])
+        check(any(p.startswith("/v1/search?q=a%26b%20%C3%A9&") for p in paths), "search: the query is percent-encoded as UTF-8", str(paths))
+
+        S.real_images = True
+        st, paths = live([], reset=False)
+        imgs = [e for e in S.log if e["path"].startswith("/img/")]
+        check(len(imgs) > 0 and all("Authorization" not in e["headers"] for e in imgs),
+              "covers: images are downloaded without the Spotify token", str(len(imgs)))
+        check(int(st.get("images_ready", "0")) > 0, "covers: downloaded PNGs decode into the cache", str(st))
+
+        S.log.clear()
+        st, paths = live(["--img-budget", "20", "--act", f"{H_NAV},{PAGE_SETTINGS}"], reset=False)
+        distinct = len({e["path"] for e in S.log if e["path"].startswith("/img/")})
+        n_ready = int(st.get("images_ready", "999"))
+        check(st.get("albums") == "8" and 0 < n_ready <= distinct and len([e for e in S.log if e["path"].startswith("/img/")]) <= 2 * distinct,
+              "covers: a tiny byte budget never makes the app loop re-downloading covers that are on screen",
+              f"{n_ready} kept of {distinct} downloaded; {st}")
+
+        # efficiency: playback progress repaints only the player bar, and an idle app repaints nothing
+        rc, out, st0, _ = run(["--demo", "--play", "--dump"])
+        rc, out, st, _ = run(["--demo", "--play", "--dump", "--run-ms", "1800"])
+        check(rc == 0 and int(st.get("paints_bar", "0")) >= 3 and int(st.get("paints_full", "99")) <= 6,
+              "paint: playback ticks redraw only the player bar", str(st))
+        check(st.get("hits") == st0.get("hits"), "paint: bar-only frames do not add duplicate hit targets", f"{st.get('hits')} vs {st0.get('hits')}")
+        rc, out, st, _ = run(["--demo", "--dump", "--run-ms", "1200"])
+        check(rc == 0 and st.get("paints_bar") == "0" and int(st.get("paints_full", "99")) <= 3, "paint: an idle app does not repaint", str(st))
+
+        S.fail_next["/v1/me/tracks"] = (500, None)
+        st, paths = live([], reset=False)
+        check(st.get("liked") == "0" and st.get("banner") == "1" and st.get("playlists") == "10",
+              "library: one failing list shows a banner and leaves the others alone", str(st))
+
+        st, paths = live(["--act", f"{H_NAV},{PAGE_SETTINGS}", "--act", f"{H_SIGNOUT},0"])
+        check(st.get("playlists") == "0" and st.get("liked") == "0" and st.get("signed_in") == "0", "library: signing out clears every list", str(st))
+        shutil.rmtree(d, ignore_errors=True)
+
+
+    # ---- milestone 5: saved-state hearts (and, below, the queue and the context menu)
+    if ONLY in (None, 'm5'):
+        S = fake_spotify.STATE
+        rc, out, st, _ = run(["--demo", "--dump", "--page", str(PAGE_LIBRARY), "--tab", "1"])
+        check(st.get("saved_count") and int(st["saved_count"]) >= 20, "hearts (demo): liked songs and saved albums start out saved", str(st))
+        n0 = int(st.get("saved_count", "0"))
+        rc, out, st, _ = run(["--demo", "--dump", "--page", str(PAGE_LIBRARY), "--tab", "1", "--act", f"{H_LIKE},{arg(SRC_LIKED, 0)}"])
+        check(rc == 0 and int(st.get("saved_count", "0")) == n0 - 1 and int(st.get("not_saved_count", "0")) >= 1,
+              "hearts (demo): clicking a saved heart un-saves that track", str(st))
+        rc, out, st, _ = run(["--demo", "--dump", "--page", str(PAGE_LIBRARY), "--tab", "1", "--act", f"{H_LIKE},{arg(SRC_LIKED, 0)}",
+                              "--act", f"{H_LIKE},{arg(SRC_LIKED, 0)}"])
+        check(int(st.get("saved_count", "0")) == n0, "hearts (demo): clicking again saves it back", str(st))
+
+        # ---- the right-click menu and queue editing (demo data)
+        row0 = arg(SRC_LIKED, 0)
+        rc, out, st, _ = run(["--demo", "--dump", "--page", str(PAGE_LIBRARY), "--tab", "1", "--ctx", f"{H_TRACK},{row0}"])
+        check(st.get("menu_open") == "1" and st.get("menu_n") == "6", "menu: a right click on a track row opens a six-item menu", str(st))
+        rc, out, st, _ = run(["--demo", "--dump", "--page", str(PAGE_LIBRARY), "--tab", "1", "--ctx", f"{H_TRACK},{row0}", "--act", f"{H_MENU_BG},0"])
+        check(st.get("menu_open") == "0", "menu: a click outside dismisses it", str(st))
+        rc, out, st, _ = run(["--demo", "--dump", "--page", str(PAGE_HOME), "--ctx", f"{H_TRACK},{arg(SRC_RECENT, 0)}", "--act", f"{H_MENU_ITEM},1"])
+        check(st.get("menu_open") == "0" and st.get("queued") == "1", "menu: Add to queue appends the track to the queue", str(st))
+        rc, out, st, _ = run(["--demo", "--dump", "--page", str(PAGE_HOME), "--ctx", f"{H_TRACK},{arg(SRC_RECENT, 3)}", "--act", f"{H_MENU_ITEM},2"])
+        check(st.get("queued") == "1" and st.get("queue_first"), "menu: Play next puts the track at the front", str(st))
+        rc, out, st, _ = run(["--demo", "--dump", "--no-browser", "--page", str(PAGE_HOME), "--ctx", f"{H_TRACK},{arg(SRC_RECENT, 0)}", "--act", f"{H_MENU_ITEM},4"])
+        check(any(l.startswith("clipboard:https://open.spotify.com/track/") for l in out.splitlines()), "menu: Copy link copies the open.spotify.com address", out[-300:])
+        rc, out, st, _ = run(["--demo", "--dump", "--no-browser", "--page", str(PAGE_HOME), "--ctx", f"{H_TRACK},{arg(SRC_RECENT, 0)}", "--act", f"{H_MENU_ITEM},5"])
+        check(any(l.startswith("open:https://open.spotify.com/track/") for l in out.splitlines()), "menu: Open in Spotify opens the web page for the track", out[-300:])
+        rc, out, st0, _ = run(["--demo", "--dump", "--play", "--queue"])
+        nq = int(st0.get("queued", "0"))
+        first = st0.get("queue_first")
+        rc, out, st, _ = run(["--demo", "--dump", "--play", "--queue", "--ctx", f"{H_QUEUE_ROW},0"])
+        check(st.get("menu_open") == "1" and st.get("menu_n") == "6", "menu: a queue row offers play / remove / move down / clear / copy / open", str(st))
+        rc, out, st, _ = run(["--demo", "--dump", "--play", "--queue", "--ctx", f"{H_QUEUE_ROW},0", "--act", f"{H_MENU_ITEM},1"])
+        check(int(st.get("queued", "0")) == nq - 1 and st.get("queue_first") != first, "menu: Remove from queue drops that row", f"{nq} -> {st.get('queued')}, {first} -> {st.get('queue_first')}")
+        rc, out, st, _ = run(["--demo", "--dump", "--play", "--queue", "--ctx", f"{H_QUEUE_ROW},0", "--act", f"{H_MENU_ITEM},2"])
+        check(int(st.get("queued", "0")) == nq and st.get("queue_first") != first, "menu: Move down swaps it with the next row", f"{first} -> {st.get('queue_first')}")
+        rc, out, st, _ = run(["--demo", "--dump", "--play", "--queue", "--ctx", f"{H_QUEUE_ROW},0", "--act", f"{H_MENU_ITEM},3"])
+        check(st.get("queued") == "0", "menu: Clear queue empties it", str(st))
+        rc, out, st, _ = run(["--demo", "--dump", "--play", "--queue", "--ctx", f"{H_QUEUE_ROW},1"])
+        check(st.get("menu_n") == "7", "menu: a middle queue row also offers Move up", str(st))
+        rc, out, st, _ = run(["--demo", "--dump", "--page", str(PAGE_LIBRARY), "--tab", "2", "--ctx", f"{H_CARD},{arg(SRC_ALBUMS, 0)}"])
+        check(st.get("menu_open") == "1" and st.get("menu_n") == "4", "menu: an album card offers open / save / copy / open in Spotify", str(st))
+        rc, out, st, _ = run(["--demo", "--dump", "--page", str(PAGE_LIBRARY), "--tab", "0", "--ctx", f"{H_CARD},{arg(SRC_PLAYLISTS, 0)}"])
+        check(st.get("menu_n") == "3", "menu: a playlist card has no save / unsave item (that would delete the playlist)", str(st))
+
+        S.reset()
+        d = tempfile.mkdtemp(prefix="bs-data-")
+        sport = free_port()
+        st, _, _ = signin(base, d, port=sport)
+        S.log.clear()
+        st, _, _ = signin(base, d, port=sport, act_signin=False, extra=["--size", "1280x1300"])
+        n_lib = int(st.get("saved_count", "0"))
+        check(n_lib >= 38, "hearts: everything in the library (liked songs, albums, playlists) counts as saved without asking", str(st))
+        asks = [e["path"] for e in S.log if e["path"].startswith("/v1/me/library/contains")]
+        recent = fake_spotify.fixture("recent.json")["items"]
+        rec_uris = [x["track"]["uri"] for x in recent]
+        saved_fx = {t["track"]["uri"] for t in fake_spotify.fixture("saved_tracks.json")["items"]}
+        unknown = [u for u in rec_uris if u not in saved_fx]
+        check(len(asks) >= 1 and all("uris=spotify%3Atrack%3A" in a for a in asks),
+              "hearts: tracks of unknown state are asked about in a batch (URIs percent-encoded)", str(asks))
+        check(st.get("asked_count") == "0" and (not unknown or int(st.get("not_saved_count", "0")) >= 1),
+              "hearts: the answers are applied (nothing left pending)", str(st))
+        first = rec_uris[0]
+        was_saved = first in fake_spotify.STATE._saved_for_test() if hasattr(fake_spotify.STATE, "_saved_for_test") else first in saved_fx
+        S.log.clear()
+        st, _, _ = signin(base, d, port=sport, act_signin=False, extra=["--size", "1280x1300", "--act", f"{H_LIKE},{arg(SRC_RECENT, 0)}"])
+        puts = [e for e in S.log if e["path"].startswith("/v1/me/library?")]
+        want_method = "DELETE" if was_saved else "PUT"
+        check(len(puts) == 1 and puts[0]["method"] == want_method and puts[0]["path"].endswith("uris=" + first.replace(":", "%3A")),
+              f"hearts: clicking a heart sends {want_method} /me/library with the URI", str([(e['method'], e['path']) for e in S.log][-4:]))
+        S.log.clear()
+        S.library_status = 500
+        n_before = int(st.get("saved_count", "0"))
+        st, _, lines = signin(base, d, port=sport, act_signin=False, extra=["--size", "1280x1300", "--act", f"{H_LIKE},{arg(SRC_RECENT, 1)}"])
+        check(any(e["path"].startswith("/v1/me/library?") for e in S.log) and int(st.get("saved_count", "0")) == n_before,
+              "hearts: a refused save flips the heart back", str(st) + f" (before: {n_before})")
+        S.library_status = None
+        shutil.rmtree(d, ignore_errors=True)
+
+        # ---- the queue against the fake API: add (POST), play next (re-issued PUT), read back (GET)
+        S.reset()
+        d = tempfile.mkdtemp(prefix="bs-data-")
+        sport = free_port()
+        st, _, _ = signin(base, d, port=sport)
+        S.log.clear()
+        recent = fake_spotify.fixture("recent.json")["items"]
+        r0, r1 = recent[0]["track"]["uri"], recent[1]["track"]["uri"]
+        app = spawn(["--dump", "--hold", "--no-browser", "--wait-auth", "--api-base", base, "--auth-base", base,
+                     "--type-client", "client-abc", "--type-port", str(sport), "--size", "1280x1300",
+                     "--edge-path", "x:\\fake\\msedge.exe",
+                     "--act", f"{H_NAV},{PAGE_SETTINGS}", "--act", f"{H_TEST_AUDIO},0",
+                     "--act-late", f"{H_NAV},{PAGE_HOME}",
+                     "--ctx-late", f"{H_TRACK},{arg(SRC_RECENT, 0)}", "--act-late", f"{H_MENU_ITEM},1",
+                     "--ctx-late", f"{H_TRACK},{arg(SRC_RECENT, 1)}", "--act-late", f"{H_MENU_ITEM},2"], d)
+        page = None
+        try:
+            line, seen = read_until(app, "edge-launch:")
+            page = FakePage(line[len("edge-launch:"):]) if line else None
+            if page:
+                page.open_commands()
+                page.post({"type": "hello"})
+                page.post({"type": "ready", "device_id": "dev-q"})
+                page.next_command()
+                wait_for(lambda: any(e["method"] == "PUT" and "/player/play" in e["path"] for e in S.log))
+                page.post({"type": "state", "paused": False, "position": 42000, "duration": 215000, "shuffle": False, "repeat": 0,
+                           "track": {"uri": "spotify:track:4cOdK2wGLETKBW3PvgPWqT", "name": "Test Track", "artists": ["A"], "album": "B", "images": []}})
+                time.sleep(0.4)
+                for _ in range(3):                     # home, right-click row 0, "Add to queue"
+                    page.post({"type": "go"})
+                    time.sleep(0.4)
+                posts = lambda: [e for e in S.log if e["method"] == "POST" and e["path"].startswith("/v1/me/player/queue")]
+                check(wait_for(lambda: len(posts()) == 1), "queue: Add to queue sends POST /me/player/queue", str([(e['method'], e['path']) for e in S.log][-5:]))
+                if posts():
+                    check(posts()[0]["path"] == "/v1/me/player/queue?uri=" + r0.replace(":", "%3A") + "&device_id=dev-q",
+                          "queue: the POST names the track and our Connect device", posts()[0]["path"])
+                check(wait_for(lambda: any(e["method"] == "GET" and e["path"].startswith("/v1/me/player/queue") for e in S.log), 8),
+                      "queue: the queue is read back from Spotify a moment later")
+                S.log.clear()
+                for _ in range(2):                     # right-click row 1, "Play next"
+                    page.post({"type": "go"})
+                    time.sleep(0.4)
+                plays = lambda: [e for e in S.log if e["method"] == "PUT" and e["path"].startswith("/v1/me/player/play")]
+                check(wait_for(lambda: len(plays()) == 1), "queue: Play next re-issues play to our device", str([(e['method'], e['path']) for e in S.log]))
+                if plays():
+                    body = json.loads(plays()[0]["body"])
+                    check(body["uris"][0] == "spotify:track:4cOdK2wGLETKBW3PvgPWqT" and body["uris"][1] == r1 and 30000 <= body["position_ms"] <= 120000,
+                          "queue: the re-issued play is [current, chosen, queue...] and resumes in place", str(body)[:300])
+                time.sleep(2.0)
+                page.post({"type": "quit"})
+        finally:
+            if page:
+                page.close()
+        lines = finish(app)
+        stq = {}
+        for l in lines:
+            if "=" in l and not l.startswith(("open:", "player-url:", "clipboard:", "edge-launch:")):
+                k, v = l.split("=", 1)
+                stq[k.strip()] = v.strip()
+        check(int(stq.get("queued", "0")) >= 12, "queue: the panel shows the queue Spotify reported", str(stq.get("queued")))
+        shutil.rmtree(d, ignore_errors=True)
 
 
     # ---- the harness itself must fail loudly when a target is absent

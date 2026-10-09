@@ -39,6 +39,8 @@ PROC app_free_search, 0
         EPROC
 
 PROC app_free_all, 0
+        lea     rcx, [q_up]
+        call    tracks_free
         lea     rcx, [lst_playlists]
         call    cards_free
         lea     rcx, [lst_albums]
@@ -78,6 +80,11 @@ PROC app_load_demo, 0
         lea     r8, [lst_recent]
         mov     r9d, 1
         call    parse_tracks
+        call    lk_reset
+        lea     rcx, [lst_liked]
+        call    lk_mark_tracks
+        lea     rcx, [lst_albums]
+        call    lk_mark_cards
         mov     rcx, [user_name]
         call    mem_free
         lea     rcx, [a_demo_user]
@@ -232,6 +239,11 @@ PROC app_open_detail, 2
         mov     rcx, [rbx+CD_SUB]
         call    w_dup
         mov     [det_sub], rax
+        mov     rcx, [det_img_m]
+        call    mem_free
+        mov     rcx, [rbx+CD_IMG_M]
+        call    u8_dup0
+        mov     [det_img_m], rax
         mov     rcx, [rbx+CD_IMG_L]
         call    u8_dup0
         mov     [det_img], rax
@@ -344,6 +356,12 @@ PROC ui_activate, 6
         je      .copyauth
         cmp     ecx, H_TEST_AUDIO
         je      .testaudio
+        cmp     ecx, H_LIKE
+        je      .like
+        cmp     ecx, H_MENU_ITEM
+        je      .menuitem
+        cmp     ecx, H_MENU_BG
+        je      .menubg
         xor     eax, eax
         jmp     .out
 .nav:   mov     eax, edx
@@ -449,7 +467,13 @@ PROC ui_activate, 6
         xor     edx, edx
         call    player_play_list
         jmp     .done
-.qrow:  mov     ebx, dword loc(1)
+.qrow:  cmp     dword [g_demo], 0
+        jne     .qdemo
+        lea     rcx, [q_up]                     ; live: play the queue from that row on
+        mov     edx, dword loc(1)
+        call    player_play_list
+        jmp     .done
+.qdemo: mov     ebx, dword loc(1)
 .skip:  call    player_next
         dec     ebx
         jns     .skip
@@ -481,6 +505,18 @@ PROC ui_activate, 6
         jmp     .done
 .copydiag:
         call    app_copy_diagnostics
+        jmp     .done
+.menuitem:
+        mov     ecx, dword loc(1)
+        call    menu_run
+        jmp     .done
+.menubg:
+        call    menu_close
+        jmp     .done
+.like:  mov     ecx, dword loc(1)
+        call    like_uri_for
+        mov     rcx, rax
+        call    like_toggle
         jmp     .done
 .testaudio:
         cmp     dword [g_demo], 0
@@ -713,7 +749,11 @@ PROC ui_key, 2
         cmp     ecx, VK_DOWN
         je      .down
         jmp     .out
-.esc:   cmp     dword [fullscreen], 0
+.esc:   cmp     dword [menu_open], 0
+        je      .esc2
+        call    menu_close
+        jmp     .yes
+.esc2:  cmp     dword [fullscreen], 0
         je      .out
         mov     dword [fullscreen], 0
         jmp     .yes

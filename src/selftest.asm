@@ -687,6 +687,7 @@ PROC selftest, 8
         call    t_check
 
         call    selftest_auth
+        call    selftest_img
         lea     rcx, [st_sum]
         call    out_z
         mov     rax, [g_fail]
@@ -994,4 +995,74 @@ PROC selftest_auth, 6
         sete    cl
         lea     rdx, [ta_s2]
         call    t_check
+        EPROC
+
+; ---------------------------------------------------------------- cover cache (procedural covers, tiny budget)
+section .data
+si_d1:  db "demo:1", 0
+si_d2:  db "demo:2", 0
+si_d3:  db "demo:3", 0
+si_d4:  db "demo:4", 0
+ti_ev1: db "img: the least recently drawn cover is evicted when over budget", 0
+ti_keep2: db "img: newer covers stay", 0
+ti_keep3: db "img: the newest cover stays", 0
+ti_prot: db "img: a cover drawn in the current frame is never evicted", 0
+ti_ev2: db "img: the next oldest goes instead", 0
+ti_bytes: db "img: the byte count follows the cache (two 256x256 covers)", 0
+section .text
+
+PROC selftest_img, 4
+        call    gfx_init
+        mov     qword [img_budget], 600*1024    ; room for two 256 KB covers
+        add     dword [img_frame], 10
+        lea     rcx, [si_d1]
+        call    img_get
+        add     dword [img_frame], 3
+        lea     rcx, [si_d2]
+        call    img_get
+        add     dword [img_frame], 3
+        lea     rcx, [si_d3]
+        call    img_get                         ; three covers exceed the budget: demo:1 (oldest, off screen) goes
+        lea     rcx, [si_d1]
+        call    img_find
+        xor     ecx, ecx
+        test    rax, rax
+        sete    cl
+        lea     rdx, [ti_ev1]
+        call    t_check
+        lea     rcx, [si_d2]
+        call    img_find
+        xor     ecx, ecx
+        test    rax, rax
+        setne   cl
+        lea     rdx, [ti_keep2]
+        call    t_check
+        lea     rcx, [si_d3]
+        call    img_find
+        xor     ecx, ecx
+        test    rax, rax
+        setne   cl
+        lea     rdx, [ti_keep3]
+        call    t_check
+        lea     rcx, [si_d4]                    ; same frame as demo:3, so demo:3 is protected and demo:2 pays
+        call    img_get
+        lea     rcx, [si_d3]
+        call    img_find
+        xor     ecx, ecx
+        test    rax, rax
+        setne   cl
+        lea     rdx, [ti_prot]
+        call    t_check
+        lea     rcx, [si_d2]
+        call    img_find
+        xor     ecx, ecx
+        test    rax, rax
+        sete    cl
+        lea     rdx, [ti_ev2]
+        call    t_check
+        mov     rcx, [img_bytes]
+        mov     edx, 2*256*256*4
+        lea     r8, [ti_bytes]
+        call    t_int
+        mov     qword [img_budget], IMG_BUDGET
         EPROC

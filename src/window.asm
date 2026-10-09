@@ -37,6 +37,12 @@ first_paint:    resd 1
 wc:             resb 80
 msg_buf:        resb 56
 ps_buf:         resb 72
+frame_valid:    resd 1                  ; a full frame has been rendered (hit list and layout are current)
+bar_only:       resd 1                  ; this paint redraws the player bar only (playback progress ticks)
+bar_hit_n:      resd 1                  ; length of the hit list just before the player bar was added
+bar_rect:       resd 4
+paints_full:    resd 1                  ; counters shown by --dump
+paints_bar:     resd 1
 rc_buf:         resb 16
 tme_buf:        resb 24
 bmi_buf:        resb 48
@@ -136,6 +142,17 @@ PROC bb_create, 8
 PROC render_frame, 2
         cmp     qword [bb_g], 0
         je      .out
+        cmp     dword [bar_only], 0
+        je      .full
+        inc     dword [paints_bar]
+        ; progress tick: everything but the player bar is unchanged in the back buffer, so only the bar is redrawn
+        mov     eax, [bar_hit_n]
+        mov     [hit_n], eax
+        call    hit_clip_reset
+        call    paint_player_bar
+        call    like_flush
+        jmp     .out
+.full:  inc     dword [paints_full]
         mov     eax, [bb_w]
         mov     [ui_w], eax
         mov     eax, [bb_h]
@@ -169,11 +186,16 @@ PROC render_frame, 2
 .settings: call page_settings
 .chrome: call   paint_sidebar
         call    paint_queue
+        mov     eax, [hit_n]
+        mov     [bar_hit_n], eax
         call    paint_player_bar
 .overlays:
         call    paint_banner
         call    paint_fullscreen
+        call    paint_menu
         call    paint_toast
+        mov     dword [frame_valid], 1
+        call    like_flush                      ; hearts painted this frame that need an answer go out as one request
 .out:   EPROC
 
 ; Moves / shows / hides the native EDIT controls to match what the current page asked for.
@@ -381,6 +403,8 @@ PROC wndproc, 12
         je      .lbd
         cmp     edx, WM_LBUTTONUP
         je      .lbu
+        cmp     edx, 0x0205                     ; WM_RBUTTONUP
+        je      .rbu
         cmp     edx, WM_MOUSEWHEEL
         je      .wheel
         cmp     edx, WM_MOUSELEAVE
@@ -420,8 +444,34 @@ PROC wndproc, 12
         lea     rdx, [ps_buf]
         call    BeginPaint
         mov     loc(4), rax                     ; hdc
+        ; only the player bar is invalid (a playback tick) and nothing else floats over it: redraw just the bar
+        mov     dword [bar_only], 0
+        cmp     dword [frame_valid], 0
+        je      .fullpaint
+        cmp     qword [cli_shot], 0
+        jne     .fullpaint
+        cmp     dword [page], PAGE_LOGIN
+        je      .fullpaint
+        cmp     qword [banner_text], 0
+        jne     .fullpaint
+        cmp     qword [toast_text], 0
+        jne     .fullpaint
+        cmp     dword [fullscreen], 0
+        jne     .fullpaint
+        cmp     dword [queue_open], 0
+        jne     .fullpaint
+        cmp     dword [menu_open], 0
+        jne     .fullpaint
+        mov     eax, [ps_buf+16]                ; PAINTSTRUCT.rcPaint.top
+        cmp     eax, [lay_bar_y]
+        jl      .fullpaint
+        mov     dword [bar_only], 1
+.fullpaint:
         call    render_frame
+        cmp     dword [bar_only], 0
+        jne     .noedits
         call    sync_edits
+.noedits:
         call    GdiFlush
         mov     rcx, loc(4)
         xor     edx, edx
@@ -453,6 +503,19 @@ PROC wndproc, 12
         call    PostQuitMessage
         jmp     .zero
 .repaint:
+        mov     rcx, loc(0)
+        xor     edx, edx
+        xor     r8d, r8d
+        call    InvalidateRect
+        jmp     .zero
+
+.rbu:   mov     rax, loc(3)
+        movsx   ecx, ax
+        sar     rax, 16
+        movsx   edx, ax
+        call    ui_context
+        test    eax, eax
+        jz      .zero
         mov     rcx, loc(0)
         xor     edx, edx
         xor     r8d, r8d
@@ -573,18 +636,55 @@ PROC wndproc, 12
 .timer: mov     rax, loc(2)
         cmp     eax, TIMER_SEARCH
         je      .search_timer
+        cmp     dword [cli_run_ms], 0           ; tests: --run-ms N lets the app run N ms, then dumps its state and exits
+        je      .norun
+        call    GetTickCount64
+        sub     rax, [run_t0]
+        cmp     eax, [cli_run_ms]
+        jb      .norun
+        call    dump_state
+        xor     ecx, ecx
+        call    ExitProcess
+.norun:
+        mov     r12, [banner_text]              ; edge_tick may raise a banner: notice that
         call    player_tick
-        mov     ebx, eax
+        mov     ebx, eax                        ; 1 = playing: the player bar's progress moved
         call    auth_tick
-        or      ebx, eax
+        mov     r13d, eax                       ; 1 = something else changed: repaint everything
         call    edge_tick
-        mov     rcx, [toast_text]
-        test    rcx, rcx
-        jz      .tk2
-        mov     ebx, 1
+        call    queue_tick
+        cmp     r12, [banner_text]
+        je      .tk1
+        mov     r13d, 1
+.tk1:   cmp     qword [toast_text], 0
+        je      .tk2
+        mov     r13d, 1
 .tk2:   test    ebx, ebx
+        jz      .tk3
+        cmp     dword [fullscreen], 0           ; the full-screen view and the queue panel show progress too
+        jne     .tkfull
+        cmp     dword [queue_open], 0
+        je      .tk3
+.tkfull: mov    r13d, 1
+.tk3:   test    r13d, r13d
+        jnz     .tkall
+        test    ebx, ebx
         jz      .zero
+        lea     rcx, [bar_rect]                 ; playback progress only: invalidate just the player bar
+        mov     dword [rcx], 0
+        mov     eax, [lay_bar_y]
+        mov     [rcx+4], eax
+        mov     eax, [ui_w]
+        mov     [rcx+8], eax
+        mov     eax, [lay_bar_y]
+        add     eax, [lay_bar_h]
+        mov     [rcx+12], eax
+        mov     rdx, rcx
         mov     rcx, loc(0)
+        xor     r8d, r8d
+        call    InvalidateRect
+        jmp     .zero
+.tkall: mov     rcx, loc(0)
         xor     edx, edx
         xor     r8d, r8d
         call    InvalidateRect

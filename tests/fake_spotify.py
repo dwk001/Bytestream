@@ -6,7 +6,7 @@
 Every request is appended to the in-memory log, readable at  GET /__log  (JSON list), and cleared with
 POST /__reset.  Responses for the data endpoints come from tests/fixtures/*.json.
 """
-import base64, hashlib, json, os, secrets, sys, threading, time, urllib.parse
+import base64, hashlib, json, os, re, secrets, struct, sys, threading, time, urllib.parse, zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 FIX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
@@ -15,6 +15,19 @@ FIX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 def fixture(name):
     with open(os.path.join(FIX, name), encoding="utf-8") as f:
         return json.load(f)
+
+
+def png_for(n):
+    """A small solid-colour PNG whose colour depends on n (so different covers differ)."""
+    w = h = 48
+    r, g, b = (37 * n + 60) % 200 + 40, (91 * n + 30) % 200 + 40, (53 * n + 90) % 200 + 40
+    raw = b"".join(b"\x00" + bytes((r, g, b)) * w for _ in range(h))
+
+    def chunk(t, d):
+        c = struct.pack(">I", len(d)) + t + d
+        return c + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 
 
 class State:
@@ -36,6 +49,15 @@ class State:
         self.rotate_refresh = False
         self.fail_next = {}       # path-prefix -> (status, retry_after)
         self.play_reply = None    # (status, json) answer for PUT /v1/me/player/play instead of 204
+        self.page_limit = None    # cap on the page size of paged endpoints (None = honour the request's limit)
+        self.real_images = False  # rewrite "demo:N" cover URLs to http://<this server>/img/N.png
+        self.forbidden_playlists = set()   # playlist ids whose /items answer 403
+        self.empty_playlists = set()       # playlist ids whose /items answer 200 with no items but a total
+        self.delay = {}           # path prefix -> seconds to wait before answering
+        self.saved = None         # set of saved URIs (None = start from the fixtures: liked tracks, saved albums, playlists)
+        self.library_status = None  # force this status for PUT/DELETE /v1/me/library
+        self.queue_added = []     # URIs POSTed to /v1/me/player/queue
+        self.queue_status = None
 
 
 STATE = State()
@@ -96,6 +118,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._token(urllib.parse.parse_qs(body.decode()))
         if u.path == "/v1/me":
             return self._me()
+        if self._library(u, q):
+            return
         if u.path == "/v1/me/player/play" and self.command == "PUT":
             return self._play(q)
         if u.path == "/echo":
@@ -171,6 +195,109 @@ class Handler(BaseHTTPRequestHandler):
             if STATE.forbid_me:
                 return self._send(403, {"error": {"status": 403, "message": "User not registered in the Developer Dashboard"}})
         self._send(200, fixture("me.json"))
+
+    # ---- the library endpoints, served from the fixtures with real paging
+    def _authed(self):
+        auth = self.headers.get("Authorization", "")
+        tok = auth[7:] if auth.startswith("Bearer ") else ""
+        with STATE.lock:
+            return STATE.access.get(tok, 0) >= time.time()
+
+    def _json_out(self, obj, status=200):
+        text = json.dumps(obj)
+        if STATE.real_images:
+            host = self.headers.get("Host", "127.0.0.1")
+            text = re.sub(r'"demo:(\d+)"', lambda m: '"http://%s/img/%s.png"' % (host, m.group(1)), text)
+        self._send(status, raw=text.encode())
+
+    def _paged(self, u, q, items, wrap=None, key="items"):
+        total = len(items)
+        off = int((q.get("offset") or ["0"])[0])
+        lim = int((q.get("limit") or ["50"])[0])
+        if STATE.page_limit:
+            lim = min(lim, STATE.page_limit)
+        page = items[off:off + lim]
+        nxt = None
+        if off + lim < total:
+            qs = dict((k, v[0]) for k, v in q.items())
+            qs["offset"] = str(off + lim)
+            qs["limit"] = str(lim)
+            nxt = "http://%s%s?%s" % (self.headers.get("Host", "127.0.0.1"), u.path, urllib.parse.urlencode(qs))
+        return {"href": "x", "limit": lim, "offset": off, "total": total, "next": nxt, key: page}
+
+    def _saved(self):
+        with STATE.lock:
+            if STATE.saved is None:
+                STATE.saved = {t["track"]["uri"] for t in fixture("saved_tracks.json")["items"]}
+                STATE.saved |= {a["album"]["uri"] for a in fixture("saved_albums.json")["items"]}
+            return STATE.saved
+
+    def _library(self, u, q):
+        path, m = u.path, self.command
+        if m != "GET" and not path.startswith("/img/") and path not in ("/v1/me/library", "/v1/me/player/queue"):
+            return False
+        routes = ("/v1/me/playlists", "/v1/me/tracks", "/v1/me/albums", "/v1/me/player/recently-played", "/v1/search",
+                  "/v1/me/library", "/v1/me/library/contains", "/v1/me/player/queue")
+        is_lib = path in routes or re.fullmatch(r"/v1/(playlists|albums)/[^/]+/(items|tracks)", path) or path.startswith("/img/")
+        if not is_lib:
+            return False
+        for prefix, secs in list(STATE.delay.items()):
+            if path.startswith(prefix):
+                time.sleep(secs)
+        if path.startswith("/img/"):
+            n = int(re.sub(r"\D", "", path) or "0")
+            self._send(200, raw=png_for(n), ctype="image/png")
+            return True
+        if not self._authed():
+            self._send(401, {"error": {"status": 401, "message": "The access token expired"}})
+            return True
+        if path == "/v1/me/library/contains":
+            uris = (q.get("uris") or [""])[0].split(",")
+            saved = self._saved()
+            self._send(200, [x in saved for x in uris])
+        elif path == "/v1/me/library":
+            if STATE.library_status:
+                self._send(STATE.library_status, {"error": {"status": STATE.library_status}})
+                return True
+            uris = (q.get("uris") or [""])[0].split(",")
+            saved = self._saved()
+            if m == "PUT":
+                saved.update(uris)
+            elif m == "DELETE":
+                saved.difference_update(uris)
+            self._send(200, raw=b"")
+        elif path == "/v1/me/player/queue":
+            if m == "POST":
+                if STATE.queue_status:
+                    self._send(STATE.queue_status, {"error": {"status": STATE.queue_status}})
+                else:
+                    STATE.queue_added.append((q.get("uri") or [""])[0])
+                    self._send(204)
+            else:
+                qd = fixture("queue.json")
+                self._json_out(qd)
+        elif path == "/v1/me/playlists":
+            self._json_out(self._paged(u, q, fixture("me_playlists.json")["items"]))
+        elif path == "/v1/me/tracks":
+            self._json_out(self._paged(u, q, fixture("saved_tracks.json")["items"]))
+        elif path == "/v1/me/albums":
+            self._json_out(self._paged(u, q, fixture("saved_albums.json")["items"]))
+        elif path == "/v1/me/player/recently-played":
+            self._json_out({"items": fixture("recent.json")["items"], "next": None})
+        elif path == "/v1/search":
+            self._json_out(fixture("search.json"))
+        else:
+            kind, ident = path.split("/")[2], path.split("/")[3]
+            if kind == "playlists":
+                if ident in STATE.forbidden_playlists:
+                    self._send(403, {"error": {"status": 403, "message": "Forbidden"}})
+                elif ident in STATE.empty_playlists:
+                    self._json_out({"href": "x", "limit": 100, "offset": 0, "total": 7, "next": None, "items": []})
+                else:
+                    self._json_out(self._paged(u, q, fixture("playlist_items.json")["items"]))
+            else:
+                self._json_out(self._paged(u, q, fixture("album_tracks.json")["items"]))
+        return True
 
     def _play(self, q):
         auth = self.headers.get("Authorization", "")

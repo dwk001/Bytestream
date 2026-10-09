@@ -132,7 +132,38 @@ PROC page_end, 0
         jge     .done
         mov     dword [scroll_main], 0
 .done:  call    ui_unclip
+        call    lib_scroll_check
         EPROC
+
+; rcx = List*, edx = y -> eax = y of the next element.  An empty list gets one muted line ("Loading..." while
+; anything is still in flight, else "Nothing here yet.")
+PROC draw_empty_hint, 2
+        mov     loc(0), rdx
+        cmp     qword [rcx+LS_COUNT], 0
+        jne     .keep
+        SETFONT F_BODY
+        SETCOL  T_MUTED_FG
+        SETALIGN 0
+        lea     rcx, [w_lib_nothing]
+        mov     eax, [det_busy]
+        or      eax, [lib_busy]
+        or      eax, [lib_busy+4]
+        or      eax, [lib_busy+8]
+        or      eax, [lib_busy+12]
+        or      eax, [srch_busy]
+        jz      .t
+        lea     rcx, [w_lib_loading]
+.t:     mov     edx, [pg_x]
+        mov     r8d, dword loc(0)
+        mov     r9d, [pg_w]
+        S       28
+        mov     outarg(5), rax
+        call    gfx_text
+        S       40
+        add     eax, dword loc(0)
+        jmp     .out
+.keep:  mov     eax, dword loc(0)
+.out:   EPROC
 
 ; ---------------------------------------------------------------- Home
 PROC page_home, 4
@@ -157,6 +188,10 @@ PROC page_home, 4
         call    draw_section
         mov     r12d, eax
         lea     rcx, [lst_playlists]
+        mov     edx, r12d
+        call    draw_empty_hint
+        mov     r12d, eax
+        lea     rcx, [lst_playlists]
         mov     edx, SRC_PLAYLISTS
         mov     r8d, [pg_x]
         mov     r9d, r12d
@@ -173,6 +208,10 @@ PROC page_home, 4
         mov     r8d, r12d
         mov     r9d, [pg_w]
         call    draw_section
+        mov     r12d, eax
+        lea     rcx, [lst_recent]
+        mov     edx, r12d
+        call    draw_empty_hint
         mov     r12d, eax
         lea     rcx, [lst_recent]
         mov     edx, SRC_RECENT
@@ -406,7 +445,14 @@ PROC page_library, 4
 .albums:
         lea     rcx, [lst_albums]
         mov     edx, SRC_ALBUMS
-.cards: mov     r8d, [pg_x]
+.cards: mov     loc(0), rcx
+        mov     loc(1), rdx
+        mov     edx, r12d
+        call    draw_empty_hint
+        mov     r12d, eax
+        mov     rcx, loc(0)
+        mov     rdx, loc(1)
+        mov     r8d, [pg_x]
         mov     r9d, r12d
         mov     eax, [pg_w]
         mov     outarg(5), rax
@@ -414,6 +460,10 @@ PROC page_library, 4
         call    draw_cards
         jmp     .end
 .liked: lea     rcx, [lst_liked]
+        mov     edx, r12d
+        call    draw_empty_hint
+        mov     r12d, eax
+        lea     rcx, [lst_liked]
         mov     edx, SRC_LIKED
         mov     r8d, [pg_x]
         mov     r9d, r12d
@@ -516,9 +566,48 @@ PROC page_detail, 8
         mov     outarg(9), rax
         mov     r8d, ebx
         call    draw_icon_button
+        cmp     dword [det_kind], KIND_ALBUM    ; (saving a playlist = following it; its own heart would delete the user's playlists)
+        jne     .noheart
+        S       44
+        mov     r8d, eax                        ; heart box
+        S       16
+        lea     ecx, [r14+rsi]
+        add     ecx, eax
+        mov     edx, esi
+        sub     edx, r8d
+        shr     edx, 1
+        add     edx, ebx
+        mov     r9d, 0xFFFE0000                 ; the open album
+        mov     rax, [det_uri]
+        mov     outarg(5), rax
+        mov     qword outarg(6), 1
+        call    draw_heart
+.noheart:
         S       24
         add     r12d, r13d
         add     r12d, eax
+        cmp     qword [det_msg], 0
+        je      .tracks
+        SETFONT F_BODY
+        SETCOL  T_MUTED_FG
+        SETALIGN 0
+        mov     rcx, [det_msg]
+        mov     edx, [pg_x]
+        mov     r8d, r12d
+        mov     r9d, [pg_w]
+        S       28
+        mov     outarg(5), rax
+        call    gfx_text
+        S       60
+        add     r12d, eax
+        mov     eax, r12d
+        call    page_end
+        jmp     .done
+.tracks:
+        lea     rcx, [lst_detail]
+        mov     edx, r12d
+        call    draw_empty_hint
+        mov     r12d, eax
         lea     rcx, [lst_detail]
         mov     edx, SRC_DETAIL
         mov     r8d, [pg_x]
@@ -528,7 +617,7 @@ PROC page_detail, 8
         mov     qword outarg(6), 1
         call    draw_tracks
         call    page_end
-        EPROC
+.done:  EPROC
 
 ; ---------------------------------------------------------------- shared setup widgets
 ; Draws a rounded input surface and registers where the native EDIT must sit.

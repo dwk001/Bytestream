@@ -825,6 +825,7 @@ PROC h_me, 6
         mov     dword [page], PAGE_HOME
         mov     dword [scroll_main], 0
         call    ui_banner_clear
+        call    lib_load_all
         BUFZERO 4
         lea     rcx, loc(4)
         lea     rdx, [a_signed_in_as]
@@ -854,6 +855,8 @@ PROC auth_sign_out, 0
         call    mem_free
         mov     qword [user_name], 0
         call    app_free_all
+        call    lib_reset
+        call    edge_stop
         call    np_clear
         mov     dword [np_valid], 0
         mov     dword [signed_in], 0

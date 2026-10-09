@@ -622,6 +622,8 @@ PROC bar_left, 8
         div     ecx
         sub     eax, esi
         mov     edi, eax                        ; text width
+        S       34
+        sub     edi, eax                        ; room for the heart after the text
         mov     ebx, [lay_bar_h]
         shr     ebx, 1
         add     ebx, [lay_bar_y]                ; vertical middle of the bar
@@ -644,6 +646,20 @@ PROC bar_left, 8
         mov     r9d, edi
         mov     outarg(5), rax
         call    gfx_text
+        S       30
+        mov     r8d, eax                        ; heart box
+        S       4
+        lea     ecx, [rsi+rdi]
+        add     ecx, eax
+        mov     eax, r8d
+        shr     eax, 1
+        mov     edx, ebx
+        sub     edx, eax
+        mov     r9d, 0xFFFF0000                 ; the playing track
+        mov     rax, [np_uri]
+        mov     outarg(5), rax
+        mov     qword outarg(6), 1
+        call    draw_heart
         jmp     .out
 .empty: SETCOL  T_SURFACE
         S       8

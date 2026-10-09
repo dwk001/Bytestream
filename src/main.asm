@@ -24,6 +24,9 @@ text_begin:
 %include "localsrv.asm"
 %include "audio.asm"
 %include "ui_widgets.asm"
+%include "library.asm"
+%include "like.asm"
+%include "menu.asm"
 %include "ui_chrome.asm"
 %include "ui_overlays.asm"
 %include "ui_pages.asm"
@@ -73,6 +76,8 @@ cli_ready:      resd 1                  ; set once scripted actions are done (sc
 cli_act_id:     resd 16                 ; bit 16 = --act-late (waits for the player page), bit 17 = already run
 cli_act_arg:    resd 16
 dump_buf:       resb 4096
+cli_run_ms:     resd 1                  ; --run-ms N: keep running N ms after the scripted actions, then dump and exit
+run_t0:         resq 1
 cli_hold:       resd 1                  ; --hold: with --dump, keep running until the player page posts "quit"
 dump_tmp:       resd 1
 
@@ -98,8 +103,10 @@ WSTR a_api, "--api-base"
 WSTR a_authb, "--auth-base"
 WSTR a_ddir, "--data-dir"
 WSTR a_edge, "--edge-path"
+WSTR a_imgb, "--img-budget"
 WSTR a_nobrowser, "--no-browser"
 WSTR a_hold, "--hold"
+WSTR a_runms, "--run-ms"
 WSTR a_netget, "--net-get"
 WSTR a_tclient, "--type-client"
 WSTR a_tport, "--type-port"
@@ -153,9 +160,28 @@ ZSTR d_device, "device="
 ZSTR d_pos, "position_ms="
 ZSTR d_dur, "duration_ms="
 ZSTR d_sdk, "sdk_ready="
+ZSTR d_menu, "menu_open="
+ZSTR d_menun, "menu_n="
+ZSTR d_q0, "queue_first="
+ZSTR d_saved, "saved_count="
+ZSTR d_notsaved, "not_saved_count="
+ZSTR d_asked, "asked_count="
+ZSTR d_pfull, "paints_full="
+ZSTR d_pbar, "paints_bar="
+ZSTR d_hits, "hits="
+ZSTR d_liked, "liked="
+ZSTR d_albums, "albums="
+ZSTR d_recent, "recent="
+ZSTR d_msg, "detail_msg="
+ZSTR d_imgs, "images_ready="
+ZSTR d_search_a, "search_albums="
+ZSTR d_search_p, "search_playlists="
+ZSTR d_search_r, "search_artists="
 ZSTR l_exit, "exit"
 WSTR a_act, "--act"
 WSTR a_actlate, "--act-late"
+WSTR a_ctx, "--ctx"
+WSTR a_ctxlate, "--ctx-late"
 WSTR a_dump, "--dump"
 
 section .text
@@ -487,8 +513,29 @@ PROC parse_cli, 4
         lea     rdx, [a_edge]
         call    arg_is
         test    eax, eax
-        jz      .b17
+        jz      .b16c
         mov     [edge_override], rsi
+        inc     qword loc(2)
+        jmp     .next
+.b16c:  mov     rcx, rbx
+        lea     rdx, [a_imgb]
+        call    arg_is
+        test    eax, eax
+        jz      .b16d
+        mov     rcx, rsi
+        call    w_atoi
+        shl     rax, 10
+        mov     [img_budget], rax               ; --img-budget KB: tests squeeze the cover cache
+        inc     qword loc(2)
+        jmp     .next
+.b16d:  mov     rcx, rbx
+        lea     rdx, [a_runms]
+        call    arg_is
+        test    eax, eax
+        jz      .b17
+        mov     rcx, rsi
+        call    w_atoi
+        mov     [cli_run_ms], eax
         inc     qword loc(2)
         jmp     .next
 .b17:   mov     rcx, rbx
@@ -547,6 +594,18 @@ PROC parse_cli, 4
         call    arg_is
         mov     r12d, 0x10000
         test    eax, eax
+        jnz     .isact
+        mov     rcx, rbx
+        lea     rdx, [a_ctx]
+        call    arg_is
+        mov     r12d, 0x80000                   ; --ctx: a right click on the target
+        test    eax, eax
+        jnz     .isact
+        mov     rcx, rbx
+        lea     rdx, [a_ctxlate]
+        call    arg_is
+        mov     r12d, 0x90000                   ; --ctx-late: the same, once the player page says "go"
+        test    eax, eax
         jz      .next
 .isact: mov     eax, [cli_nact]
         cmp     eax, 16
@@ -587,6 +646,8 @@ PROC apply_cli, 2
         call    app_open_detail
 .p3:    cmp     qword [cli_search], 0
         je      .p4
+        cmp     dword [cli_demo], 0
+        je      .p4                             ; a live search waits until the session is restored
         mov     rcx, [edit_search]
         mov     rdx, [cli_search]
         call    SetWindowTextW
@@ -728,9 +789,13 @@ PROC run_late_act, 2
 PROC run_act_at, 2
         lea     rax, [cli_act_id]
         mov     r12d, [rax+rcx*4]
+        mov     r14d, r12d
+        and     r14d, 0x80000                   ; right click instead of a click
         and     r12d, 0xFFFF
         lea     rax, [cli_act_arg]
         mov     r13d, [rax+rcx*4]
+        mov     rcx, [hwnd]
+        call    UpdateWindow                    ; paint what arrived since the last frame, so the hit list is current
         xor     esi, esi
 .find:  cmp     esi, [hit_n]
         jae     .missing
@@ -743,9 +808,20 @@ PROC run_act_at, 2
         je      .go
 .nx:    inc     esi
         jmp     .find
-.go:    mov     ecx, r12d
+.go:    test    r14d, r14d
+        jz      .click
+        mov     ecx, [rax+8]
+        shr     ecx, 1
+        add     ecx, [rax]                      ; centre of the target
+        mov     edx, [rax+12]
+        shr     edx, 1
+        add     edx, [rax+4]
+        call    ui_context
+        jmp     .painted
+.click: mov     ecx, r12d
         mov     edx, r13d
         call    ui_activate
+.painted:
         mov     rcx, [hwnd]
         xor     edx, edx
         xor     r8d, r8d
@@ -908,10 +984,65 @@ PROC dump_state, 4
         DUMPNUM d_pos, dword [np_pos]
         DUMPNUM d_dur, dword [np_dur]
         DUMPNUM d_sdk, dword [sdk_ready]
+        DUMPNUM d_menu, dword [menu_open]
+        DUMPNUM d_menun, dword [menu_n]
+        DUMPNUM d_pfull, dword [paints_full]
+        DUMPNUM d_pbar, dword [paints_bar]
+        DUMPNUM d_hits, dword [hit_n]
+        mov     edx, LKS_SAVED
+        call    lk_count_state
+        mov     [dump_tmp], eax
+        DUMPNUM d_saved, dword [dump_tmp]
+        mov     edx, LKS_NOT
+        call    lk_count_state
+        mov     [dump_tmp], eax
+        DUMPNUM d_notsaved, dword [dump_tmp]
+        mov     edx, LKS_ASKED
+        call    lk_count_state
+        mov     [dump_tmp], eax
+        DUMPNUM d_asked, dword [dump_tmp]
+        DUMPNUM d_liked, dword [lst_liked+LS_COUNT]
+        DUMPNUM d_albums, dword [lst_albums+LS_COUNT]
+        DUMPNUM d_recent, dword [lst_recent+LS_COUNT]
+        DUMPNUM d_search_a, dword [lst_search_a+LS_COUNT]
+        DUMPNUM d_search_p, dword [lst_search_p+LS_COUNT]
+        DUMPNUM d_search_r, dword [lst_search_r+LS_COUNT]
+        xor     eax, eax
+        cmp     qword [det_msg], 0
+        setne   al
+        mov     [dump_tmp], eax
+        DUMPNUM d_msg, dword [dump_tmp]
+        call    img_ready_count
+        mov     [dump_tmp], eax
+        DUMPNUM d_imgs, dword [dump_tmp]
+        xor     r8d, r8d
+        cmp     qword [q_up+LS_COUNT], 0
+        je      .noq0
+        mov     rax, [q_up+LS_PTR]
+        mov     r8, [rax+TR_TITLE]
+.noq0:  mov     rcx, rdi
+        lea     rdx, [d_q0]
+        call    dump_wfield
+        mov     rdi, rax
         mov     byte [rdi], 0
         lea     rcx, [dump_buf]
         call    out_z
         EPROC
+
+; -> eax = number of covers in the cache that finished loading (downloaded ones included)
+img_ready_count:
+        xor     eax, eax
+        xor     edx, edx
+        lea     rcx, [img_tab]
+.l:     cmp     edx, [img_cnt]
+        jae     .r
+        cmp     dword [rcx+16], IMG_READY
+        jne     .n
+        inc     eax
+.n:     add     rcx, IMG_ENT
+        inc     edx
+        jmp     .l
+.r:     ret
 
 ; rcx = dest, rdx = label, r8 = UTF-16 string or 0 -> rax = end of "label value\n"
 PROC dump_wfield, 4
@@ -1156,6 +1287,15 @@ PROC start, 8
         mov     r8d, BA_SETTINGS
         call    ui_banner
 .nobanner:
+        cmp     qword [cli_search], 0
+        je      .nosearch
+        cmp     dword [cli_demo], 0
+        jne     .nosearch
+        mov     rcx, [edit_search]
+        mov     rdx, [cli_search]
+        call    SetWindowTextW
+        call    ui_run_search
+.nosearch:
         call    run_acts
         mov     ecx, 15000
         call    net_wait_idle
@@ -1172,12 +1312,16 @@ PROC start, 8
         je      .ready2
         cmp     dword [cli_hold], 0
         jne     .ready2                         ; --hold: the dump happens when the player page says "quit"
+        cmp     dword [cli_run_ms], 0
+        jne     .ready2                         ; --run-ms: the timer dumps later
         call    dump_state
         cmp     qword [cli_shot], 0
         jne     .ready2
         xor     ecx, ecx                        ; --dump alone: print the state and exit
         call    ExitProcess
 .ready2: mov    dword [cli_ready], 1
+        call    GetTickCount64
+        mov     [run_t0], rax
         mov     rcx, [hwnd]
         xor     edx, edx
         xor     r8d, r8d

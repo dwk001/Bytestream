@@ -5,16 +5,29 @@
 
 extern GdipCreateLineBrushI, GetLocalTime, SHCreateMemStream
 
-%define IMG_ENT   24                    ; url*, image*, state
+; An entry: url* (0), GpImage* (8), state (16), FNV-1a hash of the url (20), pixel bytes (24), frame last drawn (28),
+; last use stamp (32).
+; Decoded covers are kept up to IMG_BUDGET bytes; the least recently drawn ones are dropped first and simply
+; downloaded again if they come back on screen.
+%define IMG_ENT   40
 %define IMG_MAX   400
+%define IMG_FREE    0
 %define IMG_LOADING 1
 %define IMG_READY   2
 %define IMG_FAILED  3
+%define IMG_BUDGET  (48*1024*1024)
 
 section .bss
 img_tab:        resb IMG_MAX*IMG_ENT
 img_cnt:        resd 1
-img_victim:     resd 1
+img_bytes:      resq 1                  ; pixel bytes held by READY entries
+img_clock:      resq 1                  ; bumped on every lookup: "last use" stamps
+img_frame:      resd 1                  ; bumped by every paint (hit_reset): covers drawn in this or the last frame stay
+
+section .data
+align 8
+img_budget:     dq IMG_BUDGET
+section .text
 
 section .data
 ZSTR s_demo_prefix, "demo:"
@@ -166,6 +179,45 @@ PROC img_decode, 10
 .fail:  xor     eax, eax
 .out:   EPROC
 
+; rcx = URL (UTF-8) -> eax = FNV-1a hash
+img_hash:
+        mov     eax, 0x811C9DC5
+.l:     movzx   edx, byte [rcx]
+        test    edx, edx
+        jz      .r
+        xor     eax, edx
+        imul    eax, eax, 0x01000193
+        inc     rcx
+        jmp     .l
+.r:     ret
+
+; rcx = URL (UTF-8) -> rax = the entry for it, or 0.   Entries are compared by hash first, then by text.
+PROC img_find, 4
+        mov     loc(0), rcx
+        call    img_hash
+        mov     dword loc(1), eax
+        lea     rsi, [img_tab]
+        xor     ebx, ebx
+.scan:  cmp     ebx, [img_cnt]
+        jae     .none
+        cmp     dword [rsi+16], IMG_FREE
+        je      .next
+        mov     eax, dword loc(1)
+        cmp     [rsi+20], eax
+        jne     .next
+        mov     rcx, [rsi]
+        mov     rdx, loc(0)
+        call    u8_eq
+        test    eax, eax
+        jnz     .hit
+.next:  add     rsi, IMG_ENT
+        inc     ebx
+        jmp     .scan
+.hit:   mov     rax, rsi
+        jmp     .out
+.none:  xor     eax, eax
+.out:   EPROC
+
 ; rcx = URL (UTF-8) -> rax = GpImage* when ready, else 0 (a download is queued on first request)
 PROC img_get, 4
         test    rcx, rcx
@@ -173,51 +225,36 @@ PROC img_get, 4
         cmp     byte [rcx], 0
         je      .none
         mov     loc(0), rcx
-        lea     rsi, [img_tab]
-        xor     ebx, ebx
-.scan:  cmp     ebx, [img_cnt]
-        jae     .new
-        mov     rcx, [rsi]
-        mov     rdx, loc(0)
-        call    u8_eq
-        test    eax, eax
-        jnz     .hit
-        add     rsi, IMG_ENT
-        inc     ebx
-        jmp     .scan
-.hit:   mov     rax, [rsi+8]
+        call    img_find
+        test    rax, rax
+        jz      .new
+        inc     qword [img_clock]
+        mov     rcx, [img_clock]
+        mov     [rax+32], rcx
+        mov     ecx, [img_frame]
+        mov     [rax+28], ecx
+        mov     rax, [rax+8]
         jmp     .out
-.new:   mov     eax, [img_cnt]
-        cmp     eax, IMG_MAX
-        jb      .fresh
-        mov     eax, [img_victim]               ; table full: recycle the oldest slot
-        lea     ecx, [rax+1]
-        xor     edx, edx
-        cmp     ecx, IMG_MAX
-        cmovae  ecx, edx
-        mov     [img_victim], ecx
-        imul    rsi, rax, IMG_ENT
-        lea     rcx, [img_tab]
-        add     rsi, rcx
-        mov     rcx, [rsi+8]
-        test    rcx, rcx
-        jz      .nodisp
-        call    GdipDisposeImage
-.nodisp: mov    rcx, [rsi]
-        call    mem_free
-        jmp     .fill
-.fresh: imul    rsi, rax, IMG_ENT
-        lea     rcx, [img_tab]
-        add     rsi, rcx
-        inc     dword [img_cnt]
-.fill:  mov     loc(1), rsi
+.new:   call    img_slot                        ; rax = a free table slot
+        mov     rsi, rax
+        mov     loc(1), rsi
         mov     rcx, loc(0)
         call    u8_dup
         mov     rsi, loc(1)
         mov     [rsi], rax
         mov     qword [rsi+8], 0
         mov     dword [rsi+16], IMG_LOADING
-        mov     rcx, rax
+        mov     qword [rsi+24], 0
+        inc     qword [img_clock]
+        mov     rcx, [img_clock]
+        mov     [rsi+32], rcx
+        mov     ecx, [img_frame]
+        mov     [rsi+28], ecx
+        mov     rcx, loc(0)
+        call    img_hash
+        mov     rsi, loc(1)
+        mov     [rsi+20], eax
+        mov     rcx, [rsi]
         lea     rdx, [s_demo_prefix]
         call    u8_starts
         test    eax, eax
@@ -231,6 +268,10 @@ PROC img_get, 4
         mov     rsi, loc(1)
         mov     [rsi+8], rax
         mov     dword [rsi+16], IMG_READY
+        mov     rcx, rax
+        call    img_account                     ; counts its bytes, evicts the oldest if over budget
+        mov     rsi, loc(1)
+        mov     rax, [rsi+8]
         jmp     .out
 .remote:
         mov     rcx, [rsi]
@@ -240,30 +281,154 @@ PROC img_get, 4
 .none:  xor     eax, eax
 .out:   EPROC
 
-; rcx = URL, rdx = encoded image bytes, r8 = length.  Called on the UI thread when a download finishes.
+; -> rax = a table slot that is free to use: an unused one, else the least recently used finished entry
+; (its image and url are released), else - every slot is downloading - the last slot
+PROC img_slot, 2
+        lea     rsi, [img_tab]
+        xor     ebx, ebx
+.free:  cmp     ebx, [img_cnt]
+        jae     .grow
+        cmp     dword [rsi+16], IMG_FREE
+        je      .got
+        add     rsi, IMG_ENT
+        inc     ebx
+        jmp     .free
+.grow:  cmp     dword [img_cnt], IMG_MAX
+        jae     .evict
+        inc     dword [img_cnt]
+        mov     rax, rsi
+        jmp     .out
+.evict: lea     rsi, [img_tab]
+        xor     ebx, ebx
+        xor     r12d, r12d                      ; best slot so far
+        mov     r13, -1                         ; its stamp
+.ev:    cmp     ebx, IMG_MAX
+        jae     .pick
+        cmp     dword [rsi+16], IMG_LOADING
+        je      .evn
+        cmp     [rsi+32], r13
+        jae     .evn
+        mov     r13, [rsi+32]
+        mov     r12, rsi
+.evn:   add     rsi, IMG_ENT
+        inc     ebx
+        jmp     .ev
+.pick:  test    r12, r12
+        jnz     .have
+        lea     r12, [img_tab+(IMG_MAX-1)*IMG_ENT]
+.have:  mov     rsi, r12
+        call    img_release
+.got:   mov     rax, rsi
+.out:   EPROC
+
+; rsi = entry: disposes its image, frees its url, marks it free (rsi is still the entry afterwards)
+PROC img_release, 0
+        mov     rcx, [rsi+8]
+        test    rcx, rcx
+        jz      .nodisp
+        call    GdipDisposeImage
+        mov     eax, [rsi+24]
+        sub     [img_bytes], rax
+.nodisp:
+        mov     rcx, [rsi]
+        call    mem_free
+        mov     qword [rsi], 0
+        mov     qword [rsi+8], 0
+        mov     dword [rsi+16], IMG_FREE
+        mov     dword [rsi+24], 0
+        EPROC
+
+; rcx = GpImage*: adds the entry's pixel bytes to the total and drops the least recently used covers
+; while the budget is exceeded.   The entry whose image this is must be the newest one (highest stamp).
+PROC img_account, 6
+        mov     loc(0), rcx
+        mov     qword loc(4), 0
+        lea     rdx, loc(1)
+        call    GdipGetImageWidth
+        mov     rcx, loc(0)
+        lea     rdx, loc(2)
+        call    GdipGetImageHeight
+        mov     eax, dword loc(1)
+        imul    eax, dword loc(2)
+        shl     rax, 2
+        mov     loc(3), rax
+        ; find the entry that owns this image and record its size
+        lea     rsi, [img_tab]
+        xor     ebx, ebx
+.f:     cmp     ebx, [img_cnt]
+        jae     .total
+        mov     rax, [rsi+8]
+        cmp     rax, loc(0)
+        jne     .fn
+        mov     rax, loc(3)
+        mov     [rsi+24], eax
+        mov     loc(4), rsi
+        jmp     .total
+.fn:    add     rsi, IMG_ENT
+        inc     ebx
+        jmp     .f
+.total: mov     rax, loc(3)
+        add     [img_bytes], rax
+.over:  mov     rax, [img_budget]
+        cmp     [img_bytes], rax
+        jbe     .out
+        lea     rsi, [img_tab]
+        xor     ebx, ebx
+        xor     r12d, r12d
+        mov     r13, -1
+.v:     cmp     ebx, [img_cnt]
+        jae     .drop
+        cmp     dword [rsi+16], IMG_READY
+        jne     .vn
+        cmp     rsi, loc(4)
+        je      .vn                             ; never the one just added
+        mov     eax, [rsi+28]
+        inc     eax
+        cmp     eax, [img_frame]
+        jae     .vn                             ; drawn in the current or the previous frame: still on screen
+        cmp     [rsi+32], r13
+        jae     .vn
+        mov     r13, [rsi+32]
+        mov     r12, rsi
+.vn:    add     rsi, IMG_ENT
+        inc     ebx
+        jmp     .v
+.drop:  test    r12, r12
+        jz      .out
+        mov     rsi, r12
+        call    img_release
+        jmp     .over
+.out:   EPROC
+
+; rcx = URL, rdx = encoded image bytes (0 = the download failed), r8 = length.  Called on the UI thread when a
+; download finishes.
 PROC img_set_data, 4
         mov     loc(0), rcx
+        xor     eax, eax
+        test    rdx, rdx
+        jz      .nodata                         ; remember the failure instead of retrying forever
         mov     rcx, rdx
         mov     rdx, r8
         call    img_decode
+.nodata:
         mov     loc(1), rax
-        lea     rsi, [img_tab]
-        xor     ebx, ebx
-.scan:  cmp     ebx, [img_cnt]
-        jae     .gone
-        mov     rcx, [rsi]
-        mov     rdx, loc(0)
-        call    u8_eq
-        test    eax, eax
-        jnz     .set
-        add     rsi, IMG_ENT
-        inc     ebx
-        jmp     .scan
-.set:   mov     rax, loc(1)
+        mov     rcx, loc(0)
+        call    img_find
+        test    rax, rax
+        jz      .gone
+        mov     rsi, rax
+        mov     rax, loc(1)
         test    rax, rax
         jz      .bad
         mov     [rsi+8], rax
         mov     dword [rsi+16], IMG_READY
+        inc     qword [img_clock]
+        mov     rcx, [img_clock]
+        mov     [rsi+32], rcx
+        mov     ecx, [img_frame]
+        mov     [rsi+28], ecx
+        mov     rcx, rax
+        call    img_account
         jmp     .out
 .bad:   mov     dword [rsi+16], IMG_FAILED
         jmp     .out

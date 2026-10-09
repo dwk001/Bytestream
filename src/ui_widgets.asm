@@ -519,8 +519,10 @@ PROC draw_tracks, 16
         RECT    dword dt_x, r13d, r8d, dword dt_rowh
         jmp     .cols
 .nplay: cmp     dword [hover_id], H_TRACK
+        je      .hvr
+        cmp     dword [hover_id], H_LIKE        ; the heart belongs to the row
         jne     .cols
-        cmp     dword [hover_arg], r15d
+.hvr:   cmp     dword [hover_arg], r15d
         jne     .cols
         SETCOL  T_HOVER
         RRECT   dword dt_x, r13d, dword dt_w, dword dt_rowh, 8
@@ -607,6 +609,31 @@ PROC draw_tracks, 16
         mov     r8d, dword dt_w
         mov     r9d, dword dt_rowh
         call    hit_add
+        ; heart, just left of the duration; its outline shows on the hovered row, a saved track always shows it
+        S       28
+        mov     r8d, eax                        ; box
+        S       14
+        mov     ecx, dword dt_x
+        add     ecx, dword dt_w
+        sub     ecx, dword dt_dw
+        sub     ecx, eax
+        sub     ecx, r8d
+        mov     edx, dword dt_rowh
+        sub     edx, r8d
+        shr     edx, 1
+        add     edx, r13d
+        mov     r9d, r15d
+        mov     rax, [rsi+TR_URI]
+        mov     outarg(5), rax
+        xor     eax, eax
+        cmp     dword [hover_id], H_TRACK
+        je      .hv1
+        cmp     dword [hover_id], H_LIKE
+        jne     .hv2
+.hv1:   cmp     dword [hover_arg], r15d
+        sete    al
+.hv2:   mov     outarg(6), rax
+        call    draw_heart
 .next:  inc     rbx
         jmp     .row
 .done:  mov     eax, dword dt_rowh

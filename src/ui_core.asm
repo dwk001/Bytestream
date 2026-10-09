@@ -50,6 +50,7 @@ extern CreateFontIndirectW, CreateSolidBrush, SetTextColor, SetBkColor
 %define H_CANCEL_SIGNIN 34
 %define H_COPY_AUTH   35
 %define H_TEST_AUDIO  36
+%define H_LIKE        37                ; arg: see like_uri_for
 
 %define BA_NONE       0
 %define BA_SETTINGS   1                 ; banner action: open Settings
@@ -176,7 +177,9 @@ ui_s:
 
 ; ---------------------------------------------------------------- hit list
 hit_reset:
+        inc     dword [img_frame]               ; a new paint pass: the cover cache ages its entries by frame
         mov     dword [hit_n], 0
+hit_clip_reset:
         mov     dword [clip_x0], 0
         mov     dword [clip_y0], 0
         mov     eax, [ui_w]

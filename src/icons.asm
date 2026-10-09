@@ -46,11 +46,15 @@ ic_close:  db OP_LINE,22,22,78,78, OP_LINE,78,22,22,78, OP_END
 ic_chevd:  db OP_LINE,16,34,50,68, OP_LINE,50,68,84,34, OP_END
 ic_note:   db OP_DISC,22,56,28,24, OP_LINE,48,66,48,18, OP_LINE,48,18,78,30, OP_END
 ic_check:  db OP_LINE,18,52,40,74, OP_LINE,40,74,84,26, OP_END
+; a heart: 34 points around the classic parametric curve, as a filled shape and as an outline
+ic_heart_f: db OP_POLY,34, 50,30,52,23,56,18,62,14,69,12,76,13,83,16,89,22,92,29,92,37,89,45,83,52,76,59,69,66,62,72,56,77,52,83,50,88,48,83,44,77,38,72,31,66,24,59,17,52,11,45,8,37,8,29,11,22,17,16,24,13,31,12,38,14,44,18,48,23, OP_END
+ic_heart: db OP_LINE,50,30,52,23, OP_LINE,52,23,56,18, OP_LINE,56,18,62,14, OP_LINE,62,14,69,12, OP_LINE,69,12,76,13, OP_LINE,76,13,83,16, OP_LINE,83,16,89,22, OP_LINE,89,22,92,29, OP_LINE,92,29,92,37, OP_LINE,92,37,89,45, OP_LINE,89,45,83,52, OP_LINE,83,52,76,59, OP_LINE,76,59,69,66, OP_LINE,69,66,62,72, OP_LINE,62,72,56,77, OP_LINE,56,77,52,83, OP_LINE,52,83,50,88, OP_LINE,50,88,48,83, OP_LINE,48,83,44,77, OP_LINE,44,77,38,72, OP_LINE,38,72,31,66, OP_LINE,31,66,24,59, OP_LINE,24,59,17,52, OP_LINE,17,52,11,45, OP_LINE,11,45,8,37, OP_LINE,8,37,8,29, OP_LINE,8,29,11,22, OP_LINE,11,22,17,16, OP_LINE,17,16,24,13, OP_LINE,24,13,31,12, OP_LINE,31,12,38,14, OP_LINE,38,14,44,18, OP_LINE,44,18,48,23, OP_LINE,48,23,50,30, OP_END
 
 section .bss
 ic_x:   resd 1
 ic_y:   resd 1
 ic_s:   resd 1
+ic_pts: resd 128                        ; polygon scratch: up to 64 POINTs
 
 section .text
 
@@ -139,17 +143,18 @@ PROC icon_draw, 12
         mov     outarg(5), r15
         call    gfx_line
         jmp     .op
-.poly:  movzx   ebx, byte [rsi]                 ; n points
+.poly:  movzx   ebx, byte [rsi]                 ; n points (at most 64)
         inc     rsi
         xor     edi, edi
+        lea     r12, [ic_pts]
 .pp:    call    ic_rdx
-        mov     [rbp-160+rdi*8], eax            ; POINT[] scratch = loc(11)..loc(4), clear of the call area
+        mov     [r12+rdi*8], eax
         call    ic_rdy
-        mov     [rbp-156+rdi*8], eax
+        mov     [r12+rdi*8+4], eax
         inc     edi
         cmp     edi, ebx
         jb      .pp
-        lea     rcx, [rbp-160]
+        mov     rcx, r12
         mov     edx, ebx
         call    gfx_poly
         jmp     .op

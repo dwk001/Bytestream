@@ -1,11 +1,6 @@
 ; stubs.asm - placeholders for the live-Spotify pieces that land in later milestones.
 ; Each one is replaced by a real implementation; until then the app runs in --demo mode only.
 
-real_load_detail:
-real_search:
-fetch_image_async:
-        ret
-
 ; Sign in with Spotify: validate the setup fields, then start the browser flow
 PROC real_sign_in, 0
         call    app_sign_in_check
