@@ -1,12 +1,13 @@
 name: layout-experiment
 
-# Manual only: builds the app with different amounts of padding in front of the code and the data, then checks that
+# Runs only for pushes whose commit message contains [layout]: builds the app with different amounts of padding in front of the code and the data, then checks that
 # the window comes up in each build.  Used to find bugs that depend on where things sit in the image.
 on:
-  workflow_dispatch:
+  push:
 
 jobs:
   sweep:
+    if: contains(github.event.head_commit.message, '[layout]')
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
